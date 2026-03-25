@@ -10,8 +10,11 @@ venv.bak/
 # Exports & Logs
 data_exports/
 *.log
-*.txt
 .antigravity/
+
+# Database
+marketlens.db
+*.db
 
 # Python
 __pycache__/
@@ -22,3 +25,11 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# Perplexica internals
+Perplexica/data/
+Perplexica/node_modules/
+Perplexica/.next/
+
+# Temp files
+*.remote

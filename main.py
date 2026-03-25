@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,15 +18,13 @@ from tools.searxng import search_competitors_with_searxng
 from tools.wayback import get_wayback_snapshot
 from tools.firecrawl_extractor import extract_markdown_with_firecrawl
 from tools.wayback_archiver import archive_to_wayback
-from tools.reddit_scraper import get_reddit_sentiment_sync
 
 app = FastAPI(
     title="MarketLens BI Engine",
-    description="Zero-storage market intelligence pipeline with industry-constrained discovery.",
-    version="3.2.0"
+    description="Multi-source market intelligence pipeline with Review Sentinel.",
+    version="4.0.0"
 )
 
-# Allow the local frontend (file:// or localhost) to call the API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,115 +33,58 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Concurrency throttling for search-grounded agents
-SEARCH_SEMAPHORE = asyncio.Semaphore(2)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# In-Memory Job Tracker
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+jobs: Dict[str, Dict[str, Any]] = {}
 
 class AnalyzeRequest(BaseModel):
     user_prompt: str
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Shared LLM helper — Groq (free, 14,400 req/day)
-# Uses llama-3.1-8b-instant: smallest/fastest model
-# to stay within 6000 tokens/min free-tier limit.
+# Shared LLM helper — Groq
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GROQ_MODEL   = "llama-3.1-8b-instant"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-async def _groq_chat(messages: list, max_tokens: int = 1024, max_retries: int = 4) -> str:
+async def _groq_chat(messages: list, max_tokens: int = 1024, max_retries: int = 5) -> str:
+    """Central Groq LLM caller with retry + backoff."""
     key = os.environ.get("GROQ_API_KEY")
     if not key:
         raise ValueError("GROQ_API_KEY is not set. Add it to your .env file.")
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    payload  = {"model": GROQ_MODEL, "messages": messages,
-                 "temperature": 0.2, "max_tokens": max_tokens}
-    for attempt in range(max_retries):
-        async with httpx.AsyncClient() as client:
-            r = await client.post(GROQ_API_URL, headers=headers, json=payload, timeout=60.0)
-            if r.status_code == 429:
-                wait = 10 * (attempt + 1)
-                print(f"  Groq rate-limited. Waiting {wait}s (attempt {attempt+1}/{max_retries})...")
-                await asyncio.sleep(wait)
-                continue
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip()
-    raise RuntimeError(f"Groq API failed after {max_retries} retries (persistent 429).")
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Review Sentinel Agent (Gemini 2.5 + Search Grounding)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def call_gemini_json(prompt: str, system_instruction: str, use_search: bool = False) -> dict:
-    """Helper to call Gemini 2.5 Flash with search grounding and retry logic."""
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is missing")
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-    
-    contents = [{"parts": [{"text": prompt}]}]
-    system_part = {"parts": [{"text": system_instruction}]}
-    
-    tools = []
-    if use_search:
-        tools.append({"googleSearch": {}})
-
     payload = {
-        "contents": contents,
-        "system_instruction": system_part,
-        "generationConfig": {
-            "responseMimeType": "application/json"
-        }
+        "model": GROQ_MODEL,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": max_tokens
     }
-    if tools:
-        payload["tools"] = tools
-
-    max_retries = 10
-    async with httpx.AsyncClient() as client:
-        for attempt in range(max_retries):
-            try:
-                if use_search:
-                    async with SEARCH_SEMAPHORE:
-                        resp = await client.post(url, json=payload, timeout=60.0)
-                else:
-                    resp = await client.post(url, json=payload, timeout=60.0)
-                
-                if resp.status_code == 429 or resp.status_code == 503:
-                    wait_time = (attempt + 1) * 20
-                    print(f"    [Gemini 429/503] Waiting {wait_time}s before retry {attempt+1}/{max_retries}...")
-                    await asyncio.sleep(wait_time)
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(GROQ_API_URL, headers=headers, json=payload, timeout=60.0)
+                if r.status_code == 429:
+                    wait = 10 * (attempt + 1)
+                    print(f"  [Groq] Rate-limited. Waiting {wait}s (attempt {attempt+1}/{max_retries})...")
+                    await asyncio.sleep(wait)
                     continue
-                
-                resp.raise_for_status()
-                data = resp.json()
-                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return json.loads(raw_text)
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    print(f"    [Gemini Error] Final attempt failed: {e}")
-                    return {"error": str(e)}
-                await asyncio.sleep(5)
-    return {"error": "All retries exhausted"}
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"].strip()
+        except httpx.HTTPStatusError:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(5 * (attempt + 1))
+                continue
+            raise
+    raise RuntimeError(f"Groq API failed after {max_retries} retries.")
 
-async def get_customer_reviews(competitor_name: str) -> dict:
-    """Phase 4.5: Target G2, Trustpilot, and Capterra for customer sentiment archaeology."""
-    print(f"    [Review Sentinel] Archeology for {competitor_name}...")
-    
-    prompt = f"Search for G2 and Trustpilot reviews for '{competitor_name}'. Summarize actual user feedback."
-    system = """Return a JSON object with:
-    {
-      "positives": ["3 concise specific bullet points"],
-      "negatives": ["3 concise specific bullet points"],
-      "suggestions": ["2 recurring feature requests from users"]
-    }
-    Output ONLY valid JSON. If no data, use empty lists."""
-    
-    return await call_gemini_json(prompt, system, use_search=True)
+def _truncate(s: str, n: int) -> str:
+    return s if len(s) <= n else s[:n]
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Processing Agents
+# Phase 0: Understanding Agent
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 async def run_understanding_agent(prompt: str) -> Dict[str, str]:
-    """Phase 0: Identifies industry and lists 5 real competitors."""
+    """Identifies industry and lists 5 real competitors."""
     system_prompt = (
         "You are a market research analyst. Identify the software industry and name the top 5 REAL "
         "tech/software competitors for the user's startup. Include incumbents and challengers. "
@@ -155,7 +97,6 @@ async def run_understanding_agent(prompt: str) -> Dict[str, str]:
         "competitor_4: <full company name>\n"
         "competitor_5: <full company name>"
     )
-
     raw = await _groq_chat([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt}
@@ -168,8 +109,11 @@ async def run_understanding_agent(prompt: str) -> Dict[str, str]:
             result[k.strip()] = v.strip()
     return result if result else {"industry": "unknown"}
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 1: Discovery Agent
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async def run_discovery_agent(understanding: Dict[str, str]) -> Dict[str, str]:
-    """Phase 1: Discovers actual URLs. Injects industry into every search to prevent off-topic results."""
+    """Discovers actual URLs via DuckDuckGo HTML scraping."""
     industry = understanding.get("industry", "software")
     url_map = {}
     for i in range(1, 6):
@@ -186,7 +130,7 @@ async def run_discovery_agent(understanding: Dict[str, str]) -> Dict[str, str]:
     return url_map
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Industry Relevance Validator
+# Relevance Validator
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INDUSTRY_BLOCKLIST = {
     "archery", "hunting", "fishing", "bow", "arrow", "rifle", "ammunition",
@@ -194,12 +138,7 @@ INDUSTRY_BLOCKLIST = {
     "fashion", "clothing", "apparel", "footwear", "cosmetics",
 }
 
-def _truncate(s: str, n: int) -> str:
-    """Return first n characters of s."""
-    return s if len(s) <= n else s[0:n]
-
 def validate_relevance(scraped_text: str, industry: str, competitor_name: str) -> bool:
-    """Checks if scraped content is relevant to the industry. Drops off-topic URLs."""
     text_lower = _truncate(str(scraped_text), 2000).lower()
     blocklist_hits = sum(1 for word in INDUSTRY_BLOCKLIST if word in text_lower)
     tech_words = ["software", "app", "platform", "saas", "pricing", "plan", "feature",
@@ -212,40 +151,91 @@ def validate_relevance(scraped_text: str, industry: str, competitor_name: str) -
     return True
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Extraction Engine
+# Review Sentinel (Groq-powered, no external API)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def get_customer_reviews(competitor_name: str) -> dict:
+    """Extracts review sentiment via Groq LLM knowledge."""
+    print(f"    [Review Sentinel] Analyzing reviews for {competitor_name}...")
+    prompt = (
+        f"Based on your knowledge of the software product '{competitor_name}', provide:\n"
+        "1. What users typically praise (3 specific points)\n"
+        "2. What users typically complain about (3 specific points)\n"
+        "3. Common feature requests from users (2 points)\n\n"
+        "If you have no knowledge of this product, return empty lists."
+    )
+    system = 'Return ONLY valid JSON: {"positives":[], "negatives":[], "suggestions":[]}'
+    try:
+        raw = await _groq_chat([
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt}
+        ], max_tokens=512)
+        content = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        return json.loads(content)
+    except Exception as e:
+        print(f"    [Review Sentinel] Failed: {e}")
+        return {"positives": [], "negatives": [], "suggestions": []}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Reddit Sentiment (Groq-powered, no praw needed)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def get_reddit_sentiment(competitor_name: str) -> str:
+    """Gets Reddit-style sentiment via Groq LLM knowledge."""
+    print(f"    [Reddit Sentiment] Analyzing for {competitor_name}...")
+    prompt = (
+        f"What are the most common Reddit complaints and praise about '{competitor_name}' software? "
+        "List 3-5 bullet points of real user complaints and 2-3 points of praise. "
+        "If you don't know, say 'Insufficient Data'."
+    )
+    try:
+        return await _groq_chat([
+            {"role": "system", "content": "You are a Reddit sentiment analyst. Be concise and specific."},
+            {"role": "user", "content": prompt}
+        ], max_tokens=400)
+    except Exception as e:
+        return f"Insufficient Data (Error: {str(e)[:80]})"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 2-4: Extraction Engine
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
-    """Extracts historical + live + reddit + review data per competitor."""
+    """Extracts historical + live + sentiment + review data per competitor."""
     if not url_map:
-        return "No competitor URLs found.", []
+        return ("No competitor URLs found.", {}), []
 
     competitor_payloads = {}
     live_urls = []
-    
+
+    first = True
     for name, url in url_map.items():
-        print(f"  [{name}] Launching concurrent intelligence agents...")
-        
-        # Concurrent extraction for speed
-        wayback_task = get_wayback_snapshot(url)
+        if not first:
+            print(f"  [cooldown] 2s pause between competitors...")
+            await asyncio.sleep(2)
+        first = False
+
+        print(f"  [{name}] Extracting intelligence...")
+
+        # Run Wayback + Live + Sentiment concurrently
+        wb_task = get_wayback_snapshot(url)
         live_task = extract_markdown_with_firecrawl(url)
-        reddit_task = asyncio.to_thread(get_reddit_sentiment_sync, name)
+        reddit_task = get_reddit_sentiment(name)
         review_task = get_customer_reviews(name)
-        
+
         wb, live_md, reddit_text, reviews = await asyncio.gather(
-            wayback_task, live_task, reddit_task, review_task
+            wb_task, live_task, reddit_task, review_task
         )
-        
+
         live_md = str(live_md)
         wb_text = wb.get("extracted_text", "")
         wb_date = wb.get("snapshot_date", "N/A")
         wb_status = wb.get("wayback_status", "unknown")
 
-        # Relevance validation
+        print(f"    Live: {len(live_md)} chars | Wayback: {len(wb_text)} chars | Status: {wb_status}")
+
+        # Relevance check
         if not validate_relevance(live_md, industry, name):
             competitor_payloads[name] = {"dropped": True}
             continue
 
-        # Truncate each source for prompt efficiency
         live_snippet   = _truncate(live_md, 2500)
         wb_snippet     = _truncate(str(wb_text), 1800)
         reddit_snippet = _truncate(str(reddit_text), 700)
@@ -263,11 +253,27 @@ async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
         }
         live_urls.append(url)
 
-    combined_text = "\n\n".join([p["raw_text"] for p in competitor_payloads.values() if "raw_text" in p])
+    combined_text = "\n\n".join([
+        p["raw_text"] for p in competitor_payloads.values() if "raw_text" in p
+    ])
+    print(f"  Total extraction payload: {len(combined_text)} chars")
     return (combined_text, competitor_payloads), live_urls
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Synthesis & Normalization
+# Archiver Agent (was missing — now restored)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def run_archiver_agent(urls: List[str]) -> Dict[str, str]:
+    """Pushes live competitor pages into the Wayback Machine for proof."""
+    archive_map = {}
+    for url in urls[:5]:  # Limit to 5 to avoid rate limits
+        print(f"  Archiving: {url}")
+        link = await archive_to_wayback(url)
+        if link:
+            archive_map[url] = link
+    return archive_map
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 5: Synthesis & Normalization
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async def run_normalization_agent(
     payload_data: tuple,
@@ -275,12 +281,12 @@ async def run_normalization_agent(
     understanding: Dict[str, str],
     archive_map: Dict[str, str]
 ) -> dict:
-    """Phase 5: Synthesis & Analysis. Calls Gemini, outputs flat JSON."""
+    """Synthesizes all intelligence into structured JSON via Groq."""
     raw_text, competitor_payloads = payload_data
     industry = understanding.get("industry", "unknown")
-
-    competitors_list = [name for name in competitor_payloads.keys()]
-    competitors_known = ", ".join(competitors_list)
+    competitors_known = ", ".join([
+        name for name in competitor_payloads.keys() if not competitor_payloads[name].get("dropped")
+    ])
 
     archive_proof = "\n".join(
         [f"  {url} -> {link}" for url, link in archive_map.items()]
@@ -289,80 +295,69 @@ async def run_normalization_agent(
     system_prompt = (
         f"You are a senior competitive intelligence analyst. Industry: {industry}. "
         f"Competitors analysed: {competitors_known}.\n\n"
-        "Produce a SINGLE valid JSON object (no markdown fences, no extra text) with this EXACT structure:\n"
+        "Produce a SINGLE valid JSON object (no markdown fences, no explanation) with this structure:\n"
         "{\n"
         '  "meta": {"startup_industry": str, "scraped_at": ISO8601, "competitors_count": int, "snapshot_gap_months": 12},\n'
         '  "competitors": {\n'
-        '    "<CompetitorName>": {\n'
-        '      "tagline": str,\n'
-        '      "target_segment": str,\n'
+        '    "<Name>": {\n'
+        '      "tagline": str, "target_segment": str,\n'
         '      "positioning": "budget|mid-market|premium|enterprise",\n'
         '      "pricing_model": "per-seat|flat-rate|usage-based|freemium|free",\n'
-        '      "current_pricing": [{"tier": str, "price_usd": float_or_null, "billing": "monthly|annual|one-time"}],\n'
+        '      "current_pricing": [{"tier": str, "price_usd": float_or_null, "billing": "monthly|annual"}],\n'
         '      "historical_pricing": [{"tier": str, "price_usd": float_or_null}],\n'
         '      "pricing_delta_pct": float_or_null,\n'
-        '      "key_features": [str],\n'
-        '      "recent_additions": [str],\n'
-        '      "recent_removals": [str],\n'
-        '      "competitive_moat": str,\n'
-        '      "messaging_tone": "technical|consumer|enterprise|developer",\n'
-        '      "top_complaints": [str],\n'
-        '      "top_praise": [str],\n'
-        '      "sentiment_score": float_between_neg1_and_1,\n'
+        '      "key_features": [str], "competitive_moat": str,\n'
+        '      "top_complaints": [str], "top_praise": [str],\n'
+        '      "sentiment_score": float_neg1_to_1,\n'
         '      "review_sentiment": {"positives": [str], "negatives": [str], "suggestions": [str]},\n'
         '      "wayback_status": str\n'
         '    }\n'
         '  },\n'
         '  "market_analysis": {\n'
-        '    "common_features": [str],\n'
-        '    "feature_gaps": [str],\n'
+        '    "common_features": [str], "feature_gaps": [str],\n'
         '    "pricing_range": {"min_usd": float, "max_usd": float, "avg_usd": float},\n'
-        '    "pricing_trend": str,\n'
-        '    "pricing_vacuum": str,\n'
+        '    "pricing_trend": str, "pricing_vacuum": str,\n'
         '    "overused_messaging": [str],\n'
-        '    "market_positioning_map": [{"name": str, "price_score": 0-10, "feature_richness": 0-10, "sentiment_score": -1_to_1}],\n'
-        '    "entry_opportunities": [str],\n'
-        '    "differentiation_angles": [str]\n'
+        '    "entry_opportunities": [str], "differentiation_angles": [str]\n'
         '  }\n'
         "}\n\n"
-        "Rules:\n"
-        "1. Extract all pricing from the LIVE data. Extract historical pricing from WAYBACK data.\n"
-        "2. pricing_delta_pct = ((current - historical) / historical * 100) if both exist, else null.\n"
-        "3. Incorporate Review Sentinel data into the 'review_sentiment' object precisely.\n"
-        "4. market_positioning_map: price_score 1=cheapest/free .. 10=most expensive; feature_richness 1=bare .. 10=full-featured.\n"
-        "5. If data is missing, use null for numbers and 'Insufficient Data' for strings.\n"
-        "6. Output valid JSON only."
+        "Rules: Extract pricing from LIVE data. Historical from WAYBACK. "
+        "Use Review Sentinel data for review_sentiment. "
+        "If data missing, use null / 'Insufficient Data'. Output ONLY valid JSON."
     )
 
-    # Inject Review Sentiment into the data payload
-    review_context = "\n[PROFESSIONAL REVIEW SENTINEL DATA]\n"
+    # Build review context
+    review_block = "\n[REVIEW SENTINEL DATA]\n"
     for name, p in competitor_payloads.items():
         if "reviews" in p:
-            review_context += f"--- {name} ---\n{json.dumps(p['reviews'], indent=2)}\n"
+            review_block += f"--- {name} ---\n{json.dumps(p['reviews'], indent=2)}\n"
 
     llm_prompt = (
         f"Client Startup: {user_prompt}\n"
         f"Archive Proof URLs:\n{archive_proof}\n\n"
-        f"[RAW TEXT DATA]\n{raw_text}\n"
-        f"{review_context}"
+        f"[RAW DATA]\n{raw_text}\n"
+        f"{review_block}"
     )
 
-    print("  Calling Groq for synthesis...")
+    print("  [Phase 5] Calling Groq for synthesis...")
+    # Cool down before the big synthesis call
+    await asyncio.sleep(5)
+
     try:
         raw_output = await _groq_chat([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": llm_prompt}
         ], max_tokens=3500)
 
-        # Strip potential markdown fences
         content = raw_output.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         final_json = json.loads(content)
-        
-        # Post-merge Review data if LLM missed any
-        for name, p in competitor_payloads.items():
-            if name in final_json["competitors"] and "reviews" in p:
-                final_json["competitors"][name]["review_sentiment"] = p["reviews"]
-                
+
+        # Ensure review data is always present
+        if "competitors" in final_json:
+            for name, p in competitor_payloads.items():
+                if name in final_json["competitors"] and "reviews" in p:
+                    final_json["competitors"][name]["review_sentiment"] = p["reviews"]
+
         return final_json
     except json.JSONDecodeError as e:
         raise ValueError(f"Groq did not return valid JSON: {str(e)}")
@@ -370,123 +365,131 @@ async def run_normalization_agent(
         raise ValueError(f"Synthesis Error: {str(e)}")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Storage & API Endpoints
+# Storage
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def save_to_local_file(data: Dict[str, Any]):
+async def save_to_local_file(data: Dict[str, Any]) -> str:
     os.makedirs("data_exports", exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    company = "marketlens_analysis"
-    json_path = os.path.join("data_exports", f"{company}_{ts}.json")
+    json_path = os.path.join("data_exports", f"marketlens_{ts}.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    print(f"\n[+] Saved JSON  -> {json_path}")
+    print(f"\n[+] Saved JSON -> {json_path}")
     return json_path
 
-@app.post("/api/v1/analyze", response_class=JSONResponse)
-async def analyze_competitor(request: AnalyzeRequest):
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Background Pipeline Orchestrator
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def execute_pipeline(job_id: str, user_prompt: str):
+    """Full async pipeline — runs in background, updates job status."""
     try:
-        print("\n" + "=" * 60)
-        print("MarketLens BI Engine v3.2 — Pipeline Started")
-        print("=" * 60)
+        jobs[job_id]["status"] = "UNDERSTANDING"
+        jobs[job_id]["progress"] = 10
+        print(f"\n{'='*60}\nMarketLens v4.0 — Pipeline Started (Job: {job_id})\n{'='*60}")
 
-        understanding = await run_understanding_agent(request.user_prompt)
+        # Phase 0
+        print("\n[Phase 0] Understanding startup...")
+        understanding = await run_understanding_agent(user_prompt)
+        industry = understanding.get("industry", "unknown")
+        print(f"  Industry: {industry}")
+        for i in range(1, 6):
+            c = understanding.get(f"competitor_{i}")
+            if c: print(f"  Competitor {i}: {c}")
+
+        # Phase 1
+        jobs[job_id]["status"] = "DISCOVERING"
+        jobs[job_id]["progress"] = 20
+        print("\n[Phase 1] Discovering competitor URLs...")
         url_map = await run_discovery_agent(understanding)
-        
-        payload_data, live_urls = await run_extractor_agent(url_map, understanding.get("industry", "software"))
+        print(f"  Found {len(url_map)} URLs")
+
+        # Phase 2-4
+        jobs[job_id]["status"] = "EXTRACTING"
+        jobs[job_id]["progress"] = 35
+        print("\n[Phase 2-4] Extracting intelligence...")
+        payload_data, live_urls = await run_extractor_agent(url_map, industry)
+
+        # Archiver (parallel)
+        jobs[job_id]["status"] = "ARCHIVING"
+        jobs[job_id]["progress"] = 60
+        print("\n[Archiver] Pushing to Wayback Machine...")
         archive_task = asyncio.create_task(run_archiver_agent(live_urls))
-        
+
+        # Phase 5
+        jobs[job_id]["status"] = "SYNTHESIZING"
+        jobs[job_id]["progress"] = 70
+        print("\n[Phase 5] Synthesizing intelligence...")
         archive_map = await archive_task
-        data = await run_normalization_agent(payload_data, request.user_prompt, understanding, archive_map)
-        
-        await save_to_local_file(data)
-        return {"parsed_json": data, "archive_proof": archive_map}
+        print(f"  Archived {len(archive_map)} pages")
+        data = await run_normalization_agent(payload_data, user_prompt, understanding, archive_map)
+
+        # Phase 6: Save
+        jobs[job_id]["status"] = "SAVING"
+        jobs[job_id]["progress"] = 90
+        print("\n[Phase 6] Saving output...")
+        export_path = await save_to_local_file(data)
+
+        jobs[job_id]["status"] = "COMPLETED"
+        jobs[job_id]["progress"] = 100
+        jobs[job_id]["result"] = data
+        jobs[job_id]["export_path"] = export_path
+        jobs[job_id]["archive_proof"] = archive_map
+        print(f"\n{'='*60}\nPipeline Complete! (Job: {job_id})\n{'='*60}")
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        jobs[job_id]["status"] = "FAILED"
+        jobs[job_id]["error"] = str(e)
+        print(f"\n[PIPELINE ERROR] {e}")
 
-class InsightsRequest(BaseModel):
-    export_path: str
-
-@app.post("/api/v1/insights")
-async def generate_insights(request: InsightsRequest, background_tasks: BackgroundTasks):
-    if not os.path.exists(request.export_path):
-        raise HTTPException(status_code=400, detail="Export file not found.")
-
-    try:
-        from differ import diff_from_file
-        diff = diff_from_file(request.export_path)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Failed to normalise or diff: {str(e)}")
-
-    try:
-        from insight_engine import get_insights, save_insights
-        insights = await get_insights(diff)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Perplexity API failed: {str(e)}")
-
-    def background_save(insights_data, diff_data):
-        save_insights(insights_data, diff_data)
-        os.makedirs("data_exports/diffs", exist_ok=True)
-        ts = diff_data.export_timestamp.strftime("%Y%m%d_%H%M%S")
-        company = diff_data.startup_query.replace(" ", "_").lower() if diff_data.startup_query else "analysis"
-        diff_path = os.path.join("data_exports/diffs", f"{company}_{ts}_diff.json")
-        try:
-            with open(diff_path, "w", encoding="utf-8") as f:
-                f.write(diff_data.model_dump_json(indent=2))
-        except Exception as e:
-            print(f"Failed to save diff locally: {e}")
-
-    background_tasks.add_task(background_save, insights, diff)
-
-    diff_list_clean = []
-    for cd in diff.competitor_diffs:
-        diff_list_clean.append({
-            "competitor_name": cd.competitor_name,
-            "period": {
-                "from": cd.historical_date.isoformat() if cd.historical_date else None,
-                "to": cd.live_date.isoformat() if cd.live_date else None
-            },
-            "pricing_changes": [p.model_dump() for p in cd.pricing_changes],
-            "features_added": cd.features_added,
-            "features_removed": cd.features_removed,
-            "sentiment_score_delta": cd.sentiment_score_delta,
-            "new_complaints": cd.new_complaints,
-            "programmatic_summary": cd.programmatic_summary
-        })
-
-    return {
-        "meta": {
-            "startup_query": diff.startup_query,
-            "industry": diff.industry,
-            "export_timestamp": diff.export_timestamp.isoformat(),
-            "competitors_analysed": len(diff.competitor_diffs)
-        },
-        "diffs": diff_list_clean,
-        "insights": insights
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# API Endpoints
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.post("/api/v1/analyze")
+async def start_analysis(request: AnalyzeRequest):
+    """Starts async pipeline, returns job ID for polling."""
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {
+        "status": "QUEUED",
+        "progress": 0,
+        "result": None,
+        "error": None,
+        "created_at": datetime.now().isoformat()
     }
+    asyncio.create_task(execute_pipeline(job_id, request.user_prompt))
+    return {"job_id": job_id, "status": "QUEUED"}
 
-@app.post("/api/v1/analyze-and-insights")
-async def analyze_and_insights(request: AnalyzeRequest, background_tasks: BackgroundTasks):
-    analysis_res = await analyze_competitor(request)
-    
-    exports_dir = "data_exports"
-    newest_file = None
-    if os.path.exists(exports_dir):
-        files = [
-            os.path.join(exports_dir, f)
-            for f in os.listdir(exports_dir)
-            if f.endswith(".json") and os.path.isfile(os.path.join(exports_dir, f))
-        ]
-        if files:
-            newest_file = max(files, key=os.path.getmtime)
-            
-    if not newest_file:
-         raise HTTPException(status_code=500, detail="Failed to locate export file.")
-         
-    insights_req = InsightsRequest(export_path=newest_file)
-    insights_res = await generate_insights(insights_req, background_tasks)
-    
-    return {"analysis_raw": analysis_res, "insights_pipeline": insights_res}
+@app.get("/api/v1/status/{job_id}")
+async def get_status(job_id: str):
+    """Poll this endpoint to check job progress."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job = jobs[job_id]
+    response = {
+        "job_id": job_id,
+        "status": job["status"],
+        "progress": job["progress"]
+    }
+    if job["status"] == "COMPLETED":
+        response["result"] = job["result"]
+        response["export_path"] = job.get("export_path")
+        response["archive_proof"] = job.get("archive_proof", {})
+    elif job["status"] == "FAILED":
+        response["error"] = job["error"]
+    return response
+
+@app.post("/api/v1/analyze-sync", response_class=JSONResponse)
+async def analyze_sync(request: AnalyzeRequest):
+    """Synchronous endpoint — blocks until pipeline completes (for direct API users)."""
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {
+        "status": "QUEUED", "progress": 0,
+        "result": None, "error": None,
+        "created_at": datetime.now().isoformat()
+    }
+    await execute_pipeline(job_id, request.user_prompt)
+    job = jobs[job_id]
+    if job["status"] == "FAILED":
+        raise HTTPException(status_code=500, detail=job["error"])
+    return {"parsed_json": job["result"], "archive_proof": job.get("archive_proof", {})}
 
 if __name__ == "__main__":
     import uvicorn
