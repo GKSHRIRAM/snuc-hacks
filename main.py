@@ -8,9 +8,8 @@ load_dotenv()
 import asyncio
 import httpx
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
+from typing import Any, Dict, List
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -78,7 +77,11 @@ async def _groq_chat(messages: list, max_tokens: int = 1024, max_retries: int = 
     raise RuntimeError(f"Groq API failed after {max_retries} retries.")
 
 def _truncate(s: str, n: int) -> str:
-    return s if len(s) <= n else s[:n]
+    """Return the first n characters of a string."""
+    if len(s) <= n:
+        return s
+    import itertools
+    return "".join(itertools.islice(s, n))
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Phase 0: Understanding Agent
@@ -202,8 +205,8 @@ async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
     if not url_map:
         return ("No competitor URLs found.", {}), []
 
-    competitor_payloads = {}
-    live_urls = []
+    competitor_payloads: Dict[str, Any] = {}
+    live_urls: List[str] = []
 
     first = True
     for name, url in url_map.items():
@@ -253,9 +256,10 @@ async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
         }
         live_urls.append(url)
 
-    combined_text = "\n\n".join([
-        p["raw_text"] for p in competitor_payloads.values() if "raw_text" in p
-    ])
+    text_parts: List[str] = [
+        str(p["raw_text"]) for p in competitor_payloads.values() if "raw_text" in p
+    ]
+    combined_text = "\n\n".join(text_parts)
     print(f"  Total extraction payload: {len(combined_text)} chars")
     return (combined_text, competitor_payloads), live_urls
 
@@ -265,7 +269,8 @@ async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
 async def run_archiver_agent(urls: List[str]) -> Dict[str, str]:
     """Pushes live competitor pages into the Wayback Machine for proof."""
     archive_map = {}
-    for url in urls[:5]:  # Limit to 5 to avoid rate limits
+    capped = [u for i, u in enumerate(urls) if i < 5]  # limit to 5
+    for url in capped:
         print(f"  Archiving: {url}")
         link = await archive_to_wayback(url)
         if link:
@@ -327,10 +332,11 @@ async def run_normalization_agent(
     )
 
     # Build review context
-    review_block = "\n[REVIEW SENTINEL DATA]\n"
+    review_parts: List[str] = ["\n[REVIEW SENTINEL DATA]"]
     for name, p in competitor_payloads.items():
         if "reviews" in p:
-            review_block += f"--- {name} ---\n{json.dumps(p['reviews'], indent=2)}\n"
+            review_parts.append(f"--- {name} ---\n{json.dumps(p['reviews'], indent=2)}")
+    review_block: str = "\n".join(review_parts)
 
     llm_prompt = (
         f"Client Startup: {user_prompt}\n"
@@ -476,7 +482,7 @@ async def get_status(job_id: str):
         response["error"] = job["error"]
     return response
 
-@app.post("/api/v1/analyze-sync", response_class=JSONResponse)
+@app.post("/api/v1/analyze-sync")
 async def analyze_sync(request: AnalyzeRequest):
     """Synchronous endpoint — blocks until pipeline completes (for direct API users)."""
     job_id = str(uuid.uuid4())
