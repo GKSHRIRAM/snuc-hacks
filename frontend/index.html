@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MarketLens BI Engine</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: { 700: '#334155', 800: '#1e293b', 900: '#0f172a' },
+                        indigo: { 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .fade-in { animation: fadeIn 0.4s ease-in forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Custom spinner */
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.1); width: 20px; height: 20px; border-radius: 50%;
+            border-left-color: #6366f1; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 min-h-screen">
+
+<div class="max-w-7xl mx-auto px-4 py-12">
+    
+    <!-- HEADER -->
+    <header class="mb-16 text-center">
+        <h1 class="text-4xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-indigo-600 tracking-tight">MarketLens BI Engine</h1>
+        <p class="text-slate-400 mt-3 max-w-lg mx-auto">Zero-storage market intelligence pipeline predicting momentum shifts.</p>
+    </header>
+
+    <!-- PAGE 1: INPUT SCREEN -->
+    <main id="page-input" class="max-w-2xl mx-auto transition-all duration-300">
+        <div class="bg-slate-800 p-6 md:p-8 rounded-2xl shadow-2xl border border-slate-700/60">
+            <h2 class="text-2xl font-bold text-white mb-2">Describe your startup idea</h2>
+            <p class="text-slate-400 mb-6 text-sm leading-relaxed">We will identify competitors, scrape live and historical data, extract Reddit sentiment, and synthesize actionable AI insights.</p>
+            
+            <textarea id="startup-desc" class="w-full h-32 md:h-40 bg-slate-900/50 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none resize-none mb-6 placeholder-slate-600 transition" placeholder="e.g. A developer tool that auto-generates API documentation..."></textarea>
+            
+            <button id="btn-analyze" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-4 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/20 active:scale-[0.98] flex items-center justify-center gap-2">
+                <span>Analyse Market</span>
+            </button>
+            
+            <!-- PROGRESS INDICATOR -->
+            <div id="progress-container" class="hidden mt-8 text-center pt-6 border-t border-slate-700/50">
+                <div class="flex items-center justify-center gap-3 mb-3">
+                    <div class="spinner"></div>
+                    <span id="progress-text" class="text-indigo-400 text-sm font-semibold tracking-wide">Initializing Pipeline...</span>
+                </div>
+                <div class="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="bg-gradient-to-r from-indigo-600 to-indigo-400 h-full w-0 transition-all duration-300 ease-out"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- PAGE 2: RESULTS SCREEN -->
+    <div id="page-results" class="hidden space-y-12 pb-24">
+        
+        <!-- SECTION A: SUMMARY BAR -->
+        <div class="bg-indigo-900/20 border border-indigo-500/30 rounded-2xl p-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-sm shadow-sm fade-in">
+            <div class="flex flex-wrap gap-x-8 gap-y-2">
+                <div><span class="text-slate-500 uppercase tracking-widest text-[10px] font-bold block mb-1">Industry</span> <span id="res-industry" class="font-bold text-white text-lg"></span></div>
+                <div><span class="text-slate-500 uppercase tracking-widest text-[10px] font-bold block mb-1">Competitors</span> <span id="res-count" class="font-bold text-white text-lg"></span></div>
+            </div>
+            <div class="text-right w-full md:w-auto"><span class="text-slate-500 uppercase tracking-widest text-[10px] font-bold block mb-1">Generated</span> <span id="res-date" class="font-mono text-indigo-300"></span></div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            
+            <!-- LEFT: Market Snapshot (Competitor Cards) -->
+            <div class="xl:col-span-2 space-y-6 fade-in" style="animation-delay: 0.1s;">
+                <h3 class="text-xl font-bold border-b border-slate-700 pb-3 text-white flex items-center gap-2">📊 Market Snapshot</h3>
+                <div id="competitors-list" class="space-y-6"></div>
+            </div>
+
+            <!-- RIGHT: AI Insights -->
+            <div class="space-y-6 fade-in" style="animation-delay: 0.2s;">
+                <h3 class="text-xl font-bold border-b border-slate-700 pb-3 text-white flex items-center gap-2">🧠 AI Insights</h3>
+                
+                <!-- Momentum Leader -->
+                <div class="bg-gradient-to-br from-indigo-900/40 to-slate-800 border border-indigo-500/30 rounded-2xl p-6 shadow-lg">
+                    <h4 class="text-xs uppercase tracking-widest text-indigo-400 font-bold mb-3">Momentum Leader</h4>
+                    <p id="res-momentum" class="text-white leading-relaxed text-sm"></p>
+                </div>
+
+                <!-- Core Details -->
+                <div class="bg-slate-800 border border-slate-700/60 rounded-2xl p-6 shadow-lg space-y-6">
+                    <div>
+                        <h4 class="text-xs uppercase tracking-widest text-slate-400 font-bold mb-3 flex items-center gap-2">🎯 Opportunity Gaps</h4>
+                        <ol id="res-gaps" class="list-decimal pl-4 space-y-2 text-sm text-slate-300 marker:text-indigo-500/70 marker:font-bold"></ol>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-700/50">
+                        <h4 class="text-xs uppercase tracking-widest text-slate-400 font-bold mb-3 flex items-center gap-2">💰 Pricing Patterns</h4>
+                        <div id="res-patterns" class="flex flex-wrap gap-2"></div>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-700/50">
+                        <h4 class="text-xs uppercase tracking-widest text-slate-400 font-bold mb-3 flex items-center gap-2">💬 Sentiment Insights</h4>
+                        <ul id="res-sentiment" class="list-disc pl-4 space-y-2 text-sm text-slate-300 marker:text-slate-600"></ul>
+                    </div>
+                </div>
+
+                <!-- Competitor Summaries -->
+                <div class="bg-slate-800 border border-slate-700/60 rounded-2xl p-6 shadow-lg">
+                    <h4 class="text-xs uppercase tracking-widest text-slate-400 font-bold mb-4">Competitor Summaries</h4>
+                    <div id="res-summaries" class="space-y-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FULL ANALYSIS -->
+        <div class="bg-slate-800 border border-slate-700/60 rounded-2xl p-8 shadow-lg fade-in" style="animation-delay: 0.3s;">
+            <h3 class="text-xl font-bold border-b border-slate-700 pb-3 text-white mb-6">Deep-Dive Synthesis</h3>
+            <div id="res-fulltext" class="prose prose-invert prose-p:text-slate-300 prose-p:leading-8 max-w-none text-sm md:text-base"></div>
+        </div>
+
+        <!-- SOURCES -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 fade-in" style="animation-delay: 0.4s;">
+            <h4 class="text-xs uppercase tracking-widest text-slate-500 font-bold mb-4">Sources Citations</h4>
+            <ol id="res-sources" class="list-decimal pl-4 space-y-2 text-sm text-indigo-400/80 marker:text-slate-700"></ol>
+        </div>
+        
+    </div>
+</div>
+
+<script>
+    // Configuration
+    const API_BASE_URL = "http://localhost:8000";
+
+    // Fake Progress Sequence
+    const progressSteps = [
+        "Identifying competitors...",
+        "Scraping live data...",
+        "Fetching historical data...",
+        "Pulling Reddit sentiment...",
+        "Synthesising with AI...",
+        "Generating insights..."
+    ];
+
+    let progressInterval;
+
+    function simulateProgress() {
+        const btn = document.getElementById('btn-analyze');
+        const input = document.getElementById('startup-desc');
+        const container = document.getElementById('progress-container');
+        const textLabel = document.getElementById('progress-text');
+        const bar = document.getElementById('progress-bar');
+        
+        btn.disabled = true;
+        input.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-wait');
+        container.classList.remove('hidden');
+        
+        let progress = 0;
+        let stepIdx = 0;
+        
+        progressInterval = setInterval(() => {
+            progress += (Math.random() * 2) + 0.5; // slow build
+            if (progress >= 95) progress = 95; // stall before complete
+            
+            bar.style.width = `${progress}%`;
+            
+            const expectedIdx = Math.floor((progress / 95) * progressSteps.length);
+            const safeIdx = Math.min(expectedIdx, progressSteps.length - 1);
+            if (stepIdx !== safeIdx) {
+                stepIdx = safeIdx;
+                textLabel.textContent = progressSteps[stepIdx];
+            }
+        }, 1000);
+    }
+
+    function stopProgress(success = true) {
+        clearInterval(progressInterval);
+        const bar = document.getElementById('progress-bar');
+        const textLabel = document.getElementById('progress-text');
+        
+        if (success) {
+            bar.style.width = '100%';
+            textLabel.textContent = "Analysis Complete!";
+        } else {
+            document.getElementById('progress-container').classList.add('hidden');
+            const btn = document.getElementById('btn-analyze');
+            const input = document.getElementById('startup-desc');
+            btn.disabled = false;
+            input.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-wait');
+        }
+    }
+
+    document.getElementById('btn-analyze').addEventListener('click', async () => {
+        const desc = document.getElementById('startup-desc').value.trim();
+        if (!desc) {
+            alert("Please describe your startup concept.");
+            return;
+        }
+
+        simulateProgress();
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/analyze-and-insights`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_prompt: desc })
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(errText || `Server Error ${response.status}`);
+            }
+
+            const data = await response.json();
+            stopProgress(true);
+            
+            setTimeout(() => {
+                document.getElementById('page-input').classList.add('hidden');
+                document.getElementById('page-results').classList.remove('hidden');
+                renderUI(data);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }, 600);
+
+        } catch (error) {
+            console.error("Pipeline error:", error);
+            alert(`Analysis failed: ${error.message}`);
+            stopProgress(false);
+        }
+    });
+
+    function renderUI(payload) {
+        // Handle payload shape logic
+        const insightsObj = payload.insights_pipeline || payload.insights || {};
+        const meta = insightsObj.meta || {};
+        const diffs = insightsObj.diffs || [];
+        const ai = insightsObj.insights || {};
+
+        // 1. Meta Bar
+        document.getElementById('res-industry').textContent = meta.industry || 'N/A';
+        document.getElementById('res-count').textContent = meta.competitors_analysed || diffs.length;
+        document.getElementById('res-date').textContent = meta.export_timestamp ? new Date(meta.export_timestamp).toLocaleDateString() : new Date().toLocaleDateString();
+
+        // 2. Competitor Diffs Cards
+        const compList = document.getElementById('competitors-list');
+        compList.innerHTML = '';
+        
+        diffs.forEach(comp => {
+            const card = document.createElement('div');
+            card.className = "bg-slate-800 rounded-2xl p-6 border border-slate-700/60 shadow-md relative overflow-hidden group hover:border-indigo-500/40 transition-colors";
+            
+            // Decorative background gradient
+            const bgDeco = document.createElement('div');
+            bgDeco.className = "absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none";
+            
+            let html = `<div class="flex justify-between items-start mb-4 relative z-10">
+                <h4 class="text-lg font-bold text-white">${comp.competitor_name}</h4>
+            </div>`;
+            
+            // Pricing Table
+            if (comp.pricing_changes && comp.pricing_changes.length > 0) {
+                const rows = comp.pricing_changes.map(p => {
+                    let badgeClass = "bg-slate-700/50 text-slate-400";
+                    if (p.change_type.includes('increase')) badgeClass = "bg-red-500/10 text-red-400 border border-red-500/20";
+                    else if (p.change_type.includes('decrease')) badgeClass = "bg-green-500/10 text-green-400 border border-green-500/20";
+                    
+                    const histPrice = p.historical_price !== null ? `$${p.historical_price}` : '-';
+                    const livePrice = p.live_price !== null ? `$${p.live_price}` : '-';
+                    const cType = p.change_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    
+                    return `<tr class="border-b border-slate-700/30 text-xs">
+                        <td class="py-2 text-slate-300">${p.tier_name}</td>
+                        <td class="py-2 text-slate-500 font-mono">${histPrice}</td>
+                        <td class="py-2 text-white font-mono">${livePrice}</td>
+                        <td class="py-2 text-right"><span class="px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${badgeClass}">${cType}</span></td>
+                    </tr>`;
+                }).join('');
+                
+                html += `<div class="bg-slate-900/40 rounded-xl p-4 overflow-hidden mb-4 border border-slate-800 relative z-10">
+                    <table class="w-full text-left">
+                        <thead class="text-[10px] uppercase text-slate-500 tracking-wider border-b border-slate-800/80">
+                            <tr><th class="pb-2 font-medium">Tier</th><th class="pb-2 font-medium">Historical</th><th class="pb-2 font-medium">Live</th><th class="pb-2 font-medium text-right">Change</th></tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
+            }
+
+            // Features (Pills)
+            html += `<div class="flex flex-wrap gap-2 mb-4 relative z-10">`;
+            (comp.features_added || []).forEach(f => {
+                html += `<span class="bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-1 rounded text-xs">＋ ${f}</span>`;
+            });
+            (comp.features_removed || []).forEach(f => {
+                html += `<span class="bg-red-500/10 text-red-300 border border-red-500/20 px-2 py-1 rounded text-xs line-through opacity-80">－ ${f}</span>`;
+            });
+            html += `</div>`;
+            
+            // Sentiment
+            const sentScore = comp.sentiment_score_delta || 0;
+            const sColor = sentScore > 0 ? 'bg-green-500' : (sentScore < 0 ? 'bg-red-500' : 'bg-slate-500');
+            const sText = sentScore > 0 ? '+' + sentScore.toFixed(2) : sentScore.toFixed(2);
+            
+            html += `
+                <div class="flex items-center gap-3 relative z-10 text-xs pt-2 border-t border-slate-700/40">
+                    <span class="text-slate-400 font-medium">Sentiment Shift:</span>
+                    <div class="flex items-center gap-2">
+                        <div class="w-20 h-1.5 bg-slate-900 rounded-full overflow-hidden"><div class="h-full ${sColor}" style="width: ${Math.min(Math.abs(sentScore)*100, 100)}%"></div></div>
+                        <span class="font-mono ${sColor.replace('bg-', 'text-')}">${sText}</span>
+                    </div>
+                </div>
+            `;
+            
+            // Summary text
+            html += `<p class="mt-4 text-sm text-slate-400 italic relative z-10">${comp.programmatic_summary}</p>`;
+            
+            card.innerHTML += html;
+            card.prepend(bgDeco);
+            compList.appendChild(card);
+        });
+
+        // 3. AI Insights
+        const leader = ai.momentum_leader || '';
+        document.getElementById('res-momentum').innerHTML = `
+            <span class="font-bold text-white text-base block mb-1">${leader.split('—')[0] || ''}</span>
+            <span class="text-slate-300 text-sm">${leader.split('—').slice(1).join('—') || leader}</span>
+        `;
+
+        const gapsHTML = (ai.opportunity_gaps || []).map(g => {
+            const parts = g.split(':');
+            if (parts.length > 1) return `<li><strong class="text-white">${parts[0]}:</strong><span class="text-slate-400 ml-1">${parts.slice(1).join(':')}</span></li>`;
+            return `<li>${g}</li>`;
+        }).join('');
+        document.getElementById('res-gaps').innerHTML = gapsHTML;
+
+        const patternsHTML = (ai.pricing_patterns || []).map(p => 
+            `<span class="bg-slate-900/60 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-medium cursor-default hover:border-indigo-500/50 transition-colors">${p}</span>`
+        ).join('');
+        document.getElementById('res-patterns').innerHTML = patternsHTML;
+
+        document.getElementById('res-sentiment').innerHTML = (ai.sentiment_insights || []).map(si => `<li>${si}</li>`).join('');
+
+        const summsContainer = document.getElementById('res-summaries');
+        summsContainer.innerHTML = '';
+        Object.entries(ai.competitor_summaries || {}).forEach(([cName, cDesc]) => {
+            const det = document.createElement('details');
+            det.className = "group bg-slate-900/50 rounded-xl border border-slate-700/50 overflow-hidden open:border-indigo-500/30 transition-all";
+            det.innerHTML = `
+                <summary class="cursor-pointer font-bold text-sm text-white px-4 py-3 hover:bg-slate-700/30 transition-colors marker:text-indigo-500 select-none">${cName}</summary>
+                <div class="px-4 pb-4 text-sm text-slate-400 border-t border-slate-800 pt-3 leading-relaxed">${cDesc}</div>
+            `;
+            summsContainer.appendChild(det);
+        });
+
+        // 4. Full Analysis
+        document.getElementById('res-fulltext').innerHTML = (ai.full_analysis || '').split('\n').filter(p=>p.trim()).map(p => `<p>${p}</p>`).join('');
+
+        // 5. Sources
+        const srcList = document.getElementById('res-sources');
+        srcList.innerHTML = (ai.sources || []).map(s => `<li><a href="${s}" target="_blank" rel="noopener" class="hover:underline hover:text-indigo-300 inline-block overflow-hidden text-ellipsis whitespace-nowrap max-w-full align-bottom">${s}</a></li>`).join('');
+    }
+</script>
+
+</body>
+</html>
