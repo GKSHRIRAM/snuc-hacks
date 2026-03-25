@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MarketLens — Competitive Intelligence</title>
+  <meta name="description" content="AI-powered competitive intelligence with live and historical market data.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #080c14;
+      --surface:  #0f1624;
+      --card:     #131d2e;
+      --border:   #1e2d42;
+      --accent:   #3b7bff;
+      --accent2:  #00d4aa;
+      --warn:     #ff6b6b;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --label:    #94a3b8;
+      --radius:   14px;
+      --font:     'Inter', system-ui, sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6; }
+
+    /* ─── Layout ─── */
+    .container { max-width: 1440px; margin: 0 auto; padding: 0 24px; }
+    .hidden { display: none !important; }
+
+    /* ─── Input Page ─── */
+    #page-input {
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 40px 24px;
+    }
+    .brand { text-align: center; margin-bottom: 48px; }
+    .brand h1 {
+      font-size: 2.8rem; font-weight: 800; letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #fff 30%, var(--accent) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .brand p { color: var(--muted); margin-top: 10px; font-size: 1.05rem; }
+
+    .input-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 20px; padding: 40px; width: 100%; max-width: 660px;
+      box-shadow: 0 0 80px rgba(59,123,255,0.08);
+    }
+    .input-card label { display: block; font-weight: 600; font-size: 1rem; margin-bottom: 12px; color: var(--text); }
+    textarea#startup-desc {
+      width: 100%; height: 130px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px; color: var(--text); font-family: var(--font);
+      font-size: 0.95rem; resize: none; outline: none; transition: border-color .2s;
+    }
+    textarea#startup-desc:focus { border-color: var(--accent); }
+    textarea#startup-desc::placeholder { color: var(--muted); }
+
+    .btn-primary {
+      margin-top: 16px; width: 100%; padding: 16px;
+      background: var(--accent); color: #fff; font-weight: 700; font-size: 1rem;
+      border: none; border-radius: 10px; cursor: pointer; transition: all .2s;
+      letter-spacing: 0.01em;
+    }
+    .btn-primary:hover:not(:disabled) { background: #4d8aff; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(59,123,255,0.3); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Progress */
+    #progress-wrap { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
+    .progress-step { font-size: 0.85rem; color: var(--accent); font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(59,123,255,0.2); border-left-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-track { height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width .4s ease; width: 0%; }
+
+    /* ─── Results Page ─── */
+    #page-results { padding: 32px 0 80px; }
+
+    /* Topbar */
+    .topbar {
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px; position: sticky; top: 0; z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .topbar-brand { font-weight: 700; font-size: 1rem; letter-spacing: -0.02em; color: var(--text); }
+    .topbar-meta { display: flex; gap: 24px; flex-wrap: wrap; }
+    .meta-pill { font-size: 0.78rem; color: var(--muted); }
+    .meta-pill strong { color: var(--text); font-weight: 600; }
+    .btn-reset { background: none; border: 1px solid var(--border); color: var(--label); font-size: 0.8rem; font-weight: 500; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: var(--font); transition: all .2s; }
+    .btn-reset:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; padding: 20px 0 0; border-bottom: 1px solid var(--border); margin-bottom: 32px; overflow-x: auto; }
+    .tab { padding: 10px 20px; border-radius: 8px 8px 0 0; font-size: 0.85rem; font-weight: 600; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; transition: all .2s; white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none; font-family: var(--font); }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeUp .3s ease; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Cards */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+    .card-header { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 700; margin-bottom: 14px; }
+    .card + .card { margin-top: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+    /* Competitor header strip */
+    .comp-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .comp-name { font-size: 1.2rem; font-weight: 700; color: var(--text); }
+    .comp-tagline { font-size: 0.85rem; color: var(--muted); margin-top: 4px; font-style: italic; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+    .badge-blue  { background: rgba(59,123,255,.15); color: var(--accent); border: 1px solid rgba(59,123,255,.3); }
+    .badge-green { background: rgba(0,212,170,.12); color: var(--accent2); border: 1px solid rgba(0,212,170,.3); }
+    .badge-red   { background: rgba(255,107,107,.12); color: var(--warn); border: 1px solid rgba(255,107,107,.3); }
+    .badge-gray  { background: rgba(100,116,139,.15); color: var(--muted); border: 1px solid rgba(100,116,139,.25); }
+
+    /* Pricing table */
+    table.pricing-tbl { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .pricing-tbl thead th { text-align: left; padding: 6px 10px; color: var(--muted); font-weight: 600; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); }
+    .pricing-tbl tbody td { padding: 9px 10px; border-bottom: 1px solid rgba(30,45,66,.5); vertical-align: middle; }
+    .pricing-tbl tbody tr:last-child td { border-bottom: none; }
+    .price-change-up   { color: var(--warn); }
+    .price-change-down { color: var(--accent2); }
+
+    /* Feature pills */
+    .pill-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .pill { padding: 4px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 500; }
+    .pill-add { background: rgba(0,212,170,.1); color: var(--accent2); border: 1px solid rgba(0,212,170,.25); }
+    .pill-rem { background: rgba(255,107,107,.08); color: var(--warn); border: 1px solid rgba(255,107,107,.2); text-decoration: line-through; }
+    .pill-feat { background: rgba(59,123,255,.1); color: var(--accent); border: 1px solid rgba(59,123,255,.2); }
+
+    /* Complaints list */
+    .complaint-item { font-size: 0.83rem; color: var(--label); padding: 8px 0; border-bottom: 1px solid rgba(30,45,66,.5); }
+    .complaint-item:last-child { border-bottom: none; }
+    .complaint-item::before { content: "—"; color: var(--warn); margin-right: 8px; }
+    .praise-item::before { content: "—"; color: var(--accent2); margin-right: 8px; }
+    .praise-item { font-size: 0.83rem; color: var(--label); padding: 8px 0; border-bottom: 1px solid rgba(30,45,66,.5); }
+
+    /* Section title */
+    .section-title { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+
+    /* Chart container */
+    .chart-wrap { position: relative; height: 300px; }
+    .chart-wrap-tall { position: relative; height: 400px; }
+
+    /* Intelligence cards */
+    .intel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .intel-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+    .intel-card h4 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; font-weight: 700; }
+    .intel-card p, .intel-card li { font-size: 0.85rem; color: var(--label); line-height: 1.7; }
+    .intel-card ul { list-style: none; padding: 0; }
+    .intel-card li::before { content: "›"; margin-right: 8px; color: var(--accent); font-weight: 700; }
+
+    /* Moat / positioning */
+    .moat-text { font-size: 0.85rem; color: var(--label); line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* Full analysis prose */
+    .prose { font-size: 0.9rem; color: var(--label); line-height: 1.9; }
+    .prose p + p { margin-top: 14px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+    /* Responsive */
+    @media (max-width: 640px) { .brand h1 { font-size: 2rem; } .input-card { padding: 24px; } }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════ INPUT PAGE ═══════════ -->
+<div id="page-input">
+  <div class="brand">
+    <h1>MarketLens</h1>
+    <p>Live and historical competitive intelligence — automated.</p>
+  </div>
+  <div class="input-card">
+    <label for="startup-desc">Describe your startup idea</label>
+    <textarea id="startup-desc" placeholder="e.g. A SaaS tool that auto-generates compliance reports for fintech startups..."></textarea>
+    <button class="btn-primary" id="btn-analyze">Run Market Analysis</button>
+    <div id="progress-wrap" class="hidden">
+      <div class="progress-step"><span class="spinner"></span><span id="progress-text">Initialising pipeline...</span></div>
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ RESULTS PAGE ═══════════ -->
+<div id="page-results" class="hidden">
+  <!-- Sticky top bar -->
+  <div class="topbar">
+    <span class="topbar-brand">MarketLens</span>
+    <div class="topbar-meta">
+      <span class="meta-pill">Industry: <strong id="m-industry">—</strong></span>
+      <span class="meta-pill">Competitors: <strong id="m-count">—</strong></span>
+      <span class="meta-pill">Snapshot gap: <strong>12 months</strong></span>
+      <span class="meta-pill">Generated: <strong id="m-date">—</strong></span>
+    </div>
+    <button class="btn-reset" id="btn-reset">New Analysis</button>
+  </div>
+
+  <div class="container">
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="tab-overview">Overview</button>
+      <button class="tab" data-tab="tab-competitors">Competitor Deep Dive</button>
+      <button class="tab" data-tab="tab-charts">Charts & Positioning</button>
+      <button class="tab" data-tab="tab-intelligence">Market Intelligence</button>
+    </div>
+
+    <!-- ── OVERVIEW TAB ── -->
+    <div id="tab-overview" class="tab-panel active">
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="card">
+          <div class="card-header">Pricing Range</div>
+          <div id="ov-pricing-range" style="font-size:1.8rem;font-weight:800;color:var(--text)">—</div>
+          <div id="ov-pricing-sub" style="font-size:0.82rem;color:var(--muted);margin-top:4px">across all competitors</div>
+        </div>
+        <div class="card">
+          <div class="card-header">Pricing Trend</div>
+          <div id="ov-pricing-trend" style="font-size:0.88rem;color:var(--label);line-height:1.6">—</div>
+        </div>
+      </div>
+
+      <!-- Pricing Vacuum + Differentiation Angles -->
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="card">
+          <div class="card-header">Pricing Vacuum</div>
+          <p id="ov-vacuum" style="font-size:0.88rem;color:var(--label);line-height:1.7">—</p>
+        </div>
+        <div class="card">
+          <div class="card-header">Entry Opportunities</div>
+          <ul id="ov-opportunities" style="font-size:0.85rem;color:var(--label);list-style:none;padding:0;line-height:1.8"></ul>
+        </div>
+      </div>
+
+      <!-- Common Features + Overused Messaging -->
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">Features Every Competitor Has</div>
+          <div id="ov-common" class="pill-wrap"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">Overused Messaging — Avoid These</div>
+          <div id="ov-messaging" class="pill-wrap"></div>
+        </div>
+      </div>
+
+      <!-- Competitor Summary Strip -->
+      <div style="margin-top:16px">
+        <div class="section-title">Competitor At a Glance</div>
+        <div id="ov-comp-strip"></div>
+      </div>
+    </div>
+
+    <!-- ── DEEP DIVE TAB ── -->
+    <div id="tab-competitors" class="tab-panel">
+      <div id="competitor-cards"></div>
+    </div>
+
+    <!-- ── CHARTS TAB ── -->
+    <div id="tab-charts" class="tab-panel">
+      <div class="grid-2" style="margin-bottom:16px">
+        <div class="card">
+          <div class="section-title">Pricing Comparison — Current vs. Historical</div>
+          <div class="chart-wrap"><canvas id="chart-pricing"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="section-title">Community Sentiment Score</div>
+          <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">Market Positioning Map — Price vs. Feature Richness</div>
+        <div class="chart-wrap-tall"><canvas id="chart-positioning"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ── INTELLIGENCE TAB ── -->
+    <div id="tab-intelligence" class="tab-panel">
+      <div class="intel-grid">
+        <div class="intel-card">
+          <h4>Pricing Vacuum</h4>
+          <p id="int-vacuum">—</p>
+        </div>
+        <div class="intel-card">
+          <h4>Feature Gaps</h4>
+          <ul id="int-feature-gaps"></ul>
+        </div>
+        <div class="intel-card">
+          <h4>Differentiation Angles</h4>
+          <ul id="int-diff-angles"></ul>
+        </div>
+        <div class="intel-card">
+          <h4>Overused Messaging</h4>
+          <ul id="int-messaging"></ul>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-title">AI Deep-Dive Analysis</div>
+        <div id="int-full-analysis" class="prose">—</div>
+      </div>
+    </div>
+  </div><!-- /container -->
+</div><!-- /page-results -->
+
+<script>
+const API = "http://localhost:8000";
+const steps = ["Identifying competitors...", "Discovering URLs...", "Scraping live data...", "Fetching 12-month snapshot...", "Analysing Reddit sentiment...", "Synthesising with AI...", "Generating intelligence...", "Done"];
+let pInt;
+
+document.getElementById('btn-analyze').addEventListener('click', async () => {
+  const desc = document.getElementById('startup-desc').value.trim();
+  if (!desc) return alert("Please describe your startup first.");
+
+  const btn = document.getElementById('btn-analyze');
+  btn.disabled = true;
+  document.getElementById('startup-desc').disabled = true;
+  document.getElementById('progress-wrap').classList.remove('hidden');
+
+  // fake progress
+  let pct = 0, si = 0;
+  const fill = document.getElementById('progress-fill');
+  const ptext = document.getElementById('progress-text');
+  ptext.textContent = steps[0];
+  pInt = setInterval(() => {
+    pct += Math.random() * 1.5 + 0.3;
+    if (pct > 94) pct = 94;
+    fill.style.width = pct + '%';
+    const ni = Math.min(Math.floor(pct / 94 * steps.length), steps.length - 2);
+    if (ni !== si) { si = ni; ptext.textContent = steps[si]; }
+  }, 1200);
+
+  try {
+    const res = await fetch(`${API}/api/v1/analyze-and-insights`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({user_prompt: desc})
+    });
+    if (!res.ok) { const t = await res.text(); throw new Error(t); }
+    const data = await res.json();
+    clearInterval(pInt);
+    fill.style.width = '100%';
+    ptext.textContent = "Analysis complete.";
+    setTimeout(() => {
+      document.getElementById('page-input').classList.add('hidden');
+      document.getElementById('page-results').classList.remove('hidden');
+      renderAll(data);
+    }, 500);
+  } catch(e) {
+    clearInterval(pInt);
+    btn.disabled = false;
+    document.getElementById('startup-desc').disabled = false;
+    document.getElementById('progress-wrap').classList.add('hidden');
+    alert("Analysis failed: " + e.message);
+  }
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  document.getElementById('page-results').classList.add('hidden');
+  document.getElementById('page-input').classList.remove('hidden');
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('progress-wrap').classList.add('hidden');
+  document.getElementById('btn-analyze').disabled = false;
+  document.getElementById('startup-desc').disabled = false;
+  document.getElementById('startup-desc').value = '';
+  destroyCharts();
+});
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ─── Chart registry (for cleanup) ───
+const charts = {};
+function destroyCharts() {
+  Object.values(charts).forEach(c => c.destroy());
+  Object.keys(charts).forEach(k => delete charts[k]);
+}
+
+// ─── Render ────────────────────────────────────────────────────────────────
+function renderAll(payload) {
+  // Extract nested structure from the Phase 5 JSON (stored in analysis_raw.parsed_json)
+  const raw = payload.analysis_raw?.parsed_json || payload.parsed_json || {};
+  // insights_pipeline gives us the diff-based insight from insight_engine
+  const pipelineInsights = payload.insights_pipeline?.insights || {};
+  const pipeMeta = payload.insights_pipeline?.meta || {};
+
+  // The rich Phase 5 output has: raw.meta, raw.competitors, raw.market_analysis
+  const meta = raw.meta || {};
+  const competitors = raw.competitors || {};
+  const market = raw.market_analysis || {};
+
+  // Fallback: if Phase 5 returned old flat format, we adapt
+  const compNames = Object.keys(competitors);
+
+  // ── Topbar meta ──
+  document.getElementById('m-industry').textContent = meta.startup_industry || pipeMeta.industry || 'N/A';
+  document.getElementById('m-count').textContent = compNames.length || meta.competitors_count || 'N/A';
+  document.getElementById('m-date').textContent = meta.scraped_at ? new Date(meta.scraped_at).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : new Date().toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'});
+
+  // ── Overview Tab ──
+  renderOverview(market, competitors, pipelineInsights);
+
+  // ── Competitor Deep Dive ──
+  renderCompetitorCards(competitors, payload.insights_pipeline?.diffs || []);
+
+  // ── Charts ──
+  renderCharts(competitors, market);
+
+  // ── Intelligence Tab ──
+  renderIntelligence(market, pipelineInsights);
+}
+
+// ─── Overview ──────────────────────────────────────────────────────────────
+function renderOverview(market, competitors, ai) {
+  const pr = market.pricing_range || {};
+  if (pr.min_usd != null && pr.max_usd != null) {
+    document.getElementById('ov-pricing-range').textContent = `$${pr.min_usd} – $${pr.max_usd}/mo`;
+    document.getElementById('ov-pricing-sub').textContent = `avg $${pr.avg_usd?.toFixed(2) || '?'}/mo across all competitors`;
+  }
+  document.getElementById('ov-pricing-trend').textContent = market.pricing_trend || 'Insufficient Data';
+  document.getElementById('ov-vacuum').textContent = market.pricing_vacuum || 'Insufficient Data';
+
+  // Entry opportunities
+  const ul = document.getElementById('ov-opportunities');
+  ul.innerHTML = (market.entry_opportunities || []).map(o => `<li style="padding:4px 0;border-bottom:1px solid var(--border)">${o}</li>`).join('');
+
+  // Common features
+  const cf = document.getElementById('ov-common');
+  cf.innerHTML = (market.common_features || []).map(f => `<span class="pill pill-feat">${f}</span>`).join('');
+
+  // Overused messaging
+  const msg = document.getElementById('ov-messaging');
+  msg.innerHTML = (market.overused_messaging || []).map(m => `<span class="pill" style="background:rgba(255,107,107,.08);color:var(--warn);border:1px solid rgba(255,107,107,.2)">"${m}"</span>`).join('');
+
+  // Competitor strip
+  const strip = document.getElementById('ov-comp-strip');
+  strip.innerHTML = '';
+  Object.entries(competitors).forEach(([name, comp]) => {
+    const curPrice = comp.current_pricing?.[0]?.price_usd;
+    const histPrice = comp.historical_pricing?.[0]?.price_usd;
+    const delta = comp.pricing_delta_pct;
+    const deltaStr = delta != null ? (delta > 0 ? `+${delta.toFixed(1)}%` : `${delta.toFixed(1)}%`) : null;
+    const deltaColor = delta > 0 ? 'var(--warn)' : delta < 0 ? 'var(--accent2)' : 'var(--muted)';
+
+    const posMap = (market.market_positioning_map || []).find(p => p.name === name) || {};
+
+    strip.innerHTML += `
+      <div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        <div style="min-width:180px">
+          <div style="font-weight:700;font-size:0.95rem">${name}</div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px;font-style:italic">${comp.tagline || ''}</div>
+        </div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.83rem">
+          <div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">CURRENT</span><strong>${curPrice != null ? '$'+curPrice+'/mo' : 'N/A'}</strong></div>
+          <div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">12MO AGO</span><strong style="color:var(--muted)">${histPrice != null ? '$'+histPrice+'/mo' : 'N/A'}</strong></div>
+          ${deltaStr ? `<div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">CHANGE</span><strong style="color:${deltaColor}">${deltaStr}</strong></div>` : ''}
+          <div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">MODEL</span><span class="badge badge-blue">${comp.pricing_model || 'N/A'}</span></div>
+          <div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">SEGMENT</span><span class="badge badge-gray">${comp.positioning || 'N/A'}</span></div>
+        </div>
+      </div>`;
+  });
+}
+
+// ─── Competitor Deep Dive Cards ─────────────────────────────────────────────
+function renderCompetitorCards(competitors, diffs) {
+  const container = document.getElementById('competitor-cards');
+  container.innerHTML = '';
+
+  Object.entries(competitors).forEach(([name, comp]) => {
+    const diffEntry = diffs.find(d => d.competitor_name === name) || {};
+
+    const curTiers = comp.current_pricing || [];
+    const histTiers = comp.historical_pricing || [];
+    const delta = comp.pricing_delta_pct;
+    const deltaClass = delta > 0 ? 'price-change-up' : delta < 0 ? 'price-change-down' : '';
+
+    // Build pricing rows
+    let pricingHTML = '';
+    if (curTiers.length) {
+      const rows = curTiers.map((t, i) => {
+        const hist = histTiers[i];
+        const diff = hist?.price_usd != null && t.price_usd != null ? (t.price_usd - hist.price_usd).toFixed(2) : null;
+        const diffStr = diff !== null ? (diff > 0 ? `<span class="price-change-up">+$${diff}</span>` : diff < 0 ? `<span class="price-change-down">$${diff}</span>` : '<span style="color:var(--muted)">—</span>') : '<span style="color:var(--muted)">—</span>';
+        return `<tr>
+          <td style="color:var(--label)">${t.tier}</td>
+          <td style="font-family:monospace">${t.price_usd != null ? '$'+t.price_usd : '—'}</td>
+          <td style="font-family:monospace;color:var(--muted)">${hist?.price_usd != null ? '$'+hist.price_usd : '—'}</td>
+          <td>${diffStr}</td>
+          <td><span class="badge badge-gray" style="font-size:0.65rem">${t.billing || '—'}</span></td>
+        </tr>`;
+      }).join('');
+      pricingHTML = `<div style="margin:16px 0">
+        <div class="card-header">Pricing Tiers — Now vs. 12 Months Ago</div>
+        <div style="overflow-x:auto"><table class="pricing-tbl">
+          <thead><tr><th>Tier</th><th>Current</th><th>Historical</th><th>Delta</th><th>Billing</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        ${delta != null ? `<div style="margin-top:8px;font-size:0.8rem">Overall price change: <strong class="${deltaClass}">${delta > 0 ? '+' : ''}${delta.toFixed(1)}%</strong></div>` : ''}
+      </div>`;
+    }
+
+    // Features
+    const keyFeats = (comp.key_features || []).slice(0, 8);
+    const added = comp.recent_additions || [];
+    const removed = comp.recent_removals || [];
+
+    // Complaints / Praise
+    const complaints = (comp.top_complaints || []).slice(0, 4);
+    const praise = (comp.top_praise || []).slice(0, 3);
+
+    const sent = comp.sentiment_score || 0;
+    const sentLabel = sent > 0.2 ? 'Positive' : sent < -0.2 ? 'Negative' : 'Neutral';
+    const sentColor = sent > 0.2 ? 'var(--accent2)' : sent < -0.2 ? 'var(--warn)' : 'var(--muted)';
+
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.style.marginBottom = '16px';
+    el.innerHTML = `
+      <div class="comp-header">
+        <div>
+          <div class="comp-name">${name}</div>
+          <div class="comp-tagline">${comp.tagline || ''}</div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <span class="badge badge-blue">${comp.pricing_model || 'N/A'}</span>
+            <span class="badge badge-gray">${comp.positioning || 'N/A'}</span>
+            <span class="badge badge-gray">${comp.messaging_tone || 'N/A'} tone</span>
+            <span class="badge badge-gray">${comp.target_segment || ''}</span>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:0.7rem;color:var(--muted);margin-bottom:4px">SENTIMENT</div>
+          <div style="font-size:1.1rem;font-weight:700;color:${sentColor}">${sentLabel}</div>
+          <div style="font-size:0.78rem;color:var(--muted)">${sent.toFixed(2)}</div>
+        </div>
+      </div>
+
+      ${pricingHTML}
+
+      <div class="grid-2" style="margin-bottom:16px">
+        <div>
+          <div class="card-header">Key Features</div>
+          <div class="pill-wrap">${keyFeats.map(f=>`<span class="pill pill-feat">${f}</span>`).join('')}</div>
+        </div>
+        <div>
+          <div class="card-header">Recent Changes</div>
+          <div class="pill-wrap">
+            ${added.map(f=>`<span class="pill pill-add">+ ${f}</span>`).join('')}
+            ${removed.map(f=>`<span class="pill pill-rem">${f}</span>`).join('')}
+            ${!added.length && !removed.length ? '<span style="color:var(--muted);font-size:0.82rem">No changes detected</span>' : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <div class="card-header">Community Complaints</div>
+          ${complaints.length ? complaints.map(c=>`<div class="complaint-item">${c}</div>`).join('') : '<div style="color:var(--muted);font-size:0.82rem">None detected</div>'}
+        </div>
+        <div>
+          <div class="card-header">Community Praise</div>
+          ${praise.length ? praise.map(c=>`<div class="praise-item">${c}</div>`).join('') : '<div style="color:var(--muted);font-size:0.82rem">None detected</div>'}
+        </div>
+      </div>
+
+      ${comp.competitive_moat ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="card-header">Competitive Moat</div>
+        <div class="moat-text">${comp.competitive_moat}</div>
+      </div>` : ''}
+    `;
+    container.appendChild(el);
+  });
+}
+
+// ─── Charts ─────────────────────────────────────────────────────────────────
+const CHART_COLORS = ['#3b7bff','#00d4aa','#ff9f43','#ff6b6b','#a29bfe','#fd79a8'];
+Chart.defaults.color = '#64748b';
+Chart.defaults.borderColor = '#1e2d42';
+Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+
+function renderCharts(competitors, market) {
+  const names = Object.keys(competitors);
+
+  // ── Pricing Chart (grouped bar: current vs historical) ──
+  const curPrices  = names.map(n => competitors[n].current_pricing?.[0]?.price_usd ?? null);
+  const histPrices = names.map(n => competitors[n].historical_pricing?.[0]?.price_usd ?? null);
+
+  const ctxP = document.getElementById('chart-pricing').getContext('2d');
+  if (charts.pricing) charts.pricing.destroy();
+  charts.pricing = new Chart(ctxP, {
+    type: 'bar',
+    data: {
+      labels: names,
+      datasets: [
+        { label: 'Current (base tier)', data: curPrices, backgroundColor: 'rgba(59,123,255,0.75)', borderRadius: 6, borderSkipped: false },
+        { label: '12 months ago', data: histPrices, backgroundColor: 'rgba(100,116,139,0.35)', borderColor: 'rgba(100,116,139,0.6)', borderWidth: 1, borderRadius: 6, borderSkipped: false }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `$${ctx.parsed.y}/mo` } } },
+      scales: { y: { ticks: { callback: v => `$${v}` }, grid: { color: '#1e2d42' } }, x: { grid: { display: false } } }
+    }
+  });
+
+  // ── Sentiment Chart ──
+  const sentScores = names.map(n => competitors[n].sentiment_score ?? 0);
+  const ctxS = document.getElementById('chart-sentiment').getContext('2d');
+  if (charts.sentiment) charts.sentiment.destroy();
+  charts.sentiment = new Chart(ctxS, {
+    type: 'bar',
+    data: {
+      labels: names,
+      datasets: [{
+        label: 'Sentiment Score',
+        data: sentScores,
+        backgroundColor: sentScores.map(s => s > 0.1 ? 'rgba(0,212,170,0.7)' : s < -0.1 ? 'rgba(255,107,107,0.7)' : 'rgba(100,116,139,0.5)'),
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.parsed.x.toFixed(2)} (–1 negative, +1 positive)` } } },
+      scales: { x: { min: -1, max: 1, ticks: { stepSize: 0.25 }, grid: { color: '#1e2d42' } }, y: { grid: { display: false } } }
+    }
+  });
+
+  // ── Market Positioning Scatter ──
+  const posMap = market.market_positioning_map || [];
+  const ctxPo = document.getElementById('chart-positioning').getContext('2d');
+  if (charts.positioning) charts.positioning.destroy();
+  charts.positioning = new Chart(ctxPo, {
+    type: 'scatter',
+    data: {
+      datasets: posMap.map((p, i) => ({
+        label: p.name,
+        data: [{ x: p.price_score ?? 5, y: p.feature_richness ?? 5 }],
+        backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+        pointRadius: 10,
+        pointHoverRadius: 14
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label} — Price: ${ctx.parsed.x}/10, Features: ${ctx.parsed.y}/10` } }
+      },
+      scales: {
+        x: { min: 0, max: 10, title: { display: true, text: 'Pricing Score (1=cheapest, 10=most expensive)' }, grid: { color: '#1e2d42' } },
+        y: { min: 0, max: 10, title: { display: true, text: 'Feature Richness (1=minimal, 10=full-featured)' }, grid: { color: '#1e2d42' } }
+      }
+    }
+  });
+}
+
+// ─── Intelligence Tab ────────────────────────────────────────────────────────
+function renderIntelligence(market, ai) {
+  document.getElementById('int-vacuum').textContent = market.pricing_vacuum || ai.momentum_leader || '—';
+
+  document.getElementById('int-feature-gaps').innerHTML =
+    (market.feature_gaps || ai.opportunity_gaps || []).map(f => `<li>${f}</li>`).join('');
+
+  document.getElementById('int-diff-angles').innerHTML =
+    (market.differentiation_angles || []).map(a => `<li>${a}</li>`).join('');
+
+  document.getElementById('int-messaging').innerHTML =
+    (market.overused_messaging || ai.pricing_patterns || []).map(m => `<li>"${m}"</li>`).join('');
+
+  const analysis = ai.full_analysis || '';
+  document.getElementById('int-full-analysis').innerHTML =
+    analysis ? analysis.split(/\n+/).filter(p => p.trim()).map(p => `<p>${p}</p>`).join('') : '<p>No deep-dive analysis available.</p>';
+}
+</script>
+</body>
+</html>
