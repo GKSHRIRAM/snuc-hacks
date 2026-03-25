@@ -1,4 +1,3 @@
-import asyncio
 import httpx
 from typing import List
 from urllib.parse import quote_plus
@@ -44,25 +43,25 @@ async def search_competitors_with_searxng(search_query: str) -> List[str]:
     Splits complex OR queries into individual simple searches.
     Uses direct DDG HTML scraping (no broken pip packages).
     """
-    all_urls = []
+    all_urls: List[str] = []
 
     # Split complex OR queries into simpler individual ones
     parts = search_query.replace("(", "").replace(")", "").replace("site:.com", "").strip()
-    sub_queries = [q.strip() for q in parts.split(" OR ") if q.strip()]
+    sub_queries: List[str] = [q.strip() for q in parts.split(" OR ") if q.strip()]
 
     if len(sub_queries) <= 1:
         sub_queries = [search_query]
 
     for q in sub_queries:
-        urls = await _search_via_ddg_html(q)
+        urls: List[str] = await _search_via_ddg_html(q)
         all_urls.extend(urls)
 
     # Deduplicate
-    seen = set()
-    unique = []
+    seen: set[str] = set()
+    unique: List[str] = []
     for u in all_urls:
         if u not in seen:
             seen.add(u)
             unique.append(u)
 
-    return unique[:1]
+    return [u for i, u in enumerate(unique) if i < 1]

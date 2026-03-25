@@ -9,28 +9,21 @@ from differ import ExportDiff
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-GROQ_MODEL   = "llama-3.1-8b-instant"
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+from tools.llm_client import llm_chat_json
 
+async def get_insights(diff: ExportDiff) -> dict:
+    """Call Local LLM to generate competitive insights from the diff."""
+    prompt = build_insight_prompt(diff)
 
-async def _groq_chat(messages: list, max_tokens: int = 1024, max_retries: int = 4) -> str:
-    key = os.environ.get("GROQ_API_KEY")
-    if not key:
-        raise RuntimeError("GROQ_API_KEY is not set.")
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    payload = {"model": GROQ_MODEL, "messages": messages,
-               "temperature": 0.2, "max_tokens": max_tokens}
-    for attempt in range(max_retries):
-        async with httpx.AsyncClient() as client:
-            r = await client.post(GROQ_API_URL, headers=headers, json=payload, timeout=60.0)
-            if r.status_code == 429:
-                wait = 10 * (attempt + 1)
-                print(f"  Groq rate-limited. Waiting {wait}s (attempt {attempt+1}/{max_retries})...")
-                await asyncio.sleep(wait)
-                continue
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"].strip()
-    raise RuntimeError(f"Groq API failed after {max_retries} retries (persistent 429).")
+    print("  Calling Local LLM for insights...")
+    try:
+        return await llm_chat_json([
+            {"role": "system", "content": "You are a competitive intelligence analyst. Respond with valid JSON only — no markdown, no preamble."},
+            {"role": "user", "content": prompt}
+        ])
+    except Exception as e:
+        print(f"  [Insights] Failed: {e}")
+        raise RuntimeError(f"Local LLM failed to generate valid insights: {e}")
 
 
 def build_insight_prompt(diff: ExportDiff) -> str:
@@ -82,23 +75,6 @@ def build_insight_prompt(diff: ExportDiff) -> str:
 
     return "\n".join(parts)
 
-
-async def get_insights(diff: ExportDiff) -> dict:
-    """Call Groq to generate competitive insights from the diff."""
-    prompt = build_insight_prompt(diff)
-
-    print("  Calling Groq for insights...")
-    raw = await _groq_chat([
-        {"role": "system", "content": "You are a competitive intelligence analyst. Respond with valid JSON only — no markdown, no preamble."},
-        {"role": "user", "content": prompt}
-    ], max_tokens=1500)
-
-    content = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Groq returned invalid JSON. Error: {e}\nRaw: {content[:500]}")
 
 
 def save_insights(insights: dict, diff: ExportDiff) -> str:

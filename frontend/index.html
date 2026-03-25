@@ -339,21 +339,65 @@ document.getElementById('btn-analyze').addEventListener('click', async () => {
   }, 1200);
 
   try {
-    const res = await fetch(`${API}/api/v1/analyze-and-insights`, {
+    // 1. Start Analysis (Async)
+    const startRes = await fetch(`${API}/api/v1/analyze`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({user_prompt: desc})
     });
-    if (!res.ok) { const t = await res.text(); throw new Error(t); }
-    const data = await res.json();
+    if (!startRes.ok) throw new Error(await startRes.text());
+    const { job_id } = await startRes.json();
+
+    // 2. Poll Status
+    let completedData = null;
+    while (true) {
+      const statusRes = await fetch(`${API}/api/v1/status/${job_id}`);
+      const job = await statusRes.json();
+      
+      if (job.status === "COMPLETED") {
+        completedData = job;
+        break;
+      }
+      if (job.status === "FAILED") {
+        throw new Error(job.error || "Analysis failed on server.");
+      }
+      
+      // Update progress
+      pct = job.progress || 0;
+      fill.style.width = pct + '%';
+      if (pct < 15) ptext.textContent = steps[0];
+      else if (pct < 30) ptext.textContent = steps[1];
+      else if (pct < 45) ptext.textContent = steps[2];
+      else if (pct < 60) ptext.textContent = steps[3];
+      else if (pct < 75) ptext.textContent = steps[4];
+      else if (pct < 90) ptext.textContent = steps[5];
+      else ptext.textContent = steps[6];
+
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    // 3. Generate Insights (Phase 6)
+    ptext.textContent = "Generating intelligence...";
+    const insightsRes = await fetch(`${API}/api/v1/insights`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({export_path: completedData.export_path})
+    });
+    const insightsData = await insightsRes.json();
+
     clearInterval(pInt);
     fill.style.width = '100%';
     ptext.textContent = "Analysis complete.";
+    
     setTimeout(() => {
       document.getElementById('page-input').classList.add('hidden');
       document.getElementById('page-results').classList.remove('hidden');
-      renderAll(data);
+      renderAll({
+        analysis_raw: { parsed_json: completedData.result },
+        insights_pipeline: insightsData
+      });
     }, 500);
+
   } catch(e) {
     clearInterval(pInt);
     btn.disabled = false;
@@ -576,6 +620,23 @@ function renderCompetitorCards(competitors, diffs) {
           ${praise.length ? praise.map(c=>`<div class="praise-item">${c}</div>`).join('') : '<div style="color:var(--muted);font-size:0.82rem">None detected</div>'}
         </div>
       </div>
+
+      ${comp.trustpilot_data ? `
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="card-header">Trustpilot Reviews (Live Scrape)</div>
+        <div style="max-height: 200px; overflow-y: auto; padding-right: 10px;">
+          ${(comp.trustpilot_data.reviews || []).map(r => `
+            <div style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-weight: 600; font-size: 0.85rem; color: var(--text);">${r.title || 'Review'}</span>
+                <span style="font-size: 0.75rem; color: var(--accent2);">★ ${r.rating}</span>
+              </div>
+              <div style="font-size: 0.8rem; color: var(--label); line-height: 1.5;">${r.body}</div>
+            </div>
+          `).join('')}
+          ${(!comp.trustpilot_data.reviews || !comp.trustpilot_data.reviews.length) ? '<div style="color:var(--muted);font-size:0.8rem;">No detailed reviews found on the first 3 pages.</div>' : ''}
+        </div>
+      </div>` : ''}
 
       ${comp.competitive_moat ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <div class="card-header">Competitive Moat</div>

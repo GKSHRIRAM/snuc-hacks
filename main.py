@@ -17,6 +17,7 @@ from tools.searxng import search_competitors_with_searxng
 from tools.wayback import get_wayback_snapshot
 from tools.firecrawl_extractor import extract_markdown_with_firecrawl
 from tools.wayback_archiver import archive_to_wayback
+from reviews.engine.review_engine import ReviewEngine
 
 app = FastAPI(
     title="MarketLens BI Engine",
@@ -40,41 +41,7 @@ jobs: Dict[str, Dict[str, Any]] = {}
 class AnalyzeRequest(BaseModel):
     user_prompt: str
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Shared LLM helper — Groq
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GROQ_MODEL   = "llama-3.1-8b-instant"
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-
-async def _groq_chat(messages: list, max_tokens: int = 1024, max_retries: int = 5) -> str:
-    """Central Groq LLM caller with retry + backoff."""
-    key = os.environ.get("GROQ_API_KEY")
-    if not key:
-        raise ValueError("GROQ_API_KEY is not set. Add it to your .env file.")
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": messages,
-        "temperature": 0.2,
-        "max_tokens": max_tokens
-    }
-    for attempt in range(max_retries):
-        try:
-            async with httpx.AsyncClient() as client:
-                r = await client.post(GROQ_API_URL, headers=headers, json=payload, timeout=60.0)
-                if r.status_code == 429:
-                    wait = 10 * (attempt + 1)
-                    print(f"  [Groq] Rate-limited. Waiting {wait}s (attempt {attempt+1}/{max_retries})...")
-                    await asyncio.sleep(wait)
-                    continue
-                r.raise_for_status()
-                return r.json()["choices"][0]["message"]["content"].strip()
-        except httpx.HTTPStatusError:
-            if attempt < max_retries - 1:
-                await asyncio.sleep(5 * (attempt + 1))
-                continue
-            raise
-    raise RuntimeError(f"Groq API failed after {max_retries} retries.")
+from tools.llm_client import llm_chat
 
 def _truncate(s: str, n: int) -> str:
     """Return the first n characters of a string."""
@@ -100,10 +67,10 @@ async def run_understanding_agent(prompt: str) -> Dict[str, str]:
         "competitor_4: <full company name>\n"
         "competitor_5: <full company name>"
     )
-    raw = await _groq_chat([
+    raw = await llm_chat([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt}
-    ], max_tokens=256)
+    ], json_mode=False)
 
     result = {}
     for line in raw.split("\n"):
@@ -168,10 +135,10 @@ async def get_customer_reviews(competitor_name: str) -> dict:
     )
     system = 'Return ONLY valid JSON: {"positives":[], "negatives":[], "suggestions":[]}'
     try:
-        raw = await _groq_chat([
+        raw = await llm_chat([
             {"role": "system", "content": system},
             {"role": "user", "content": prompt}
-        ], max_tokens=512)
+        ], json_mode=True)
         content = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         return json.loads(content)
     except Exception as e:
@@ -190,71 +157,112 @@ async def get_reddit_sentiment(competitor_name: str) -> str:
         "If you don't know, say 'Insufficient Data'."
     )
     try:
-        return await _groq_chat([
+        return await llm_chat([
             {"role": "system", "content": "You are a Reddit sentiment analyst. Be concise and specific."},
             {"role": "user", "content": prompt}
-        ], max_tokens=400)
+        ])
     except Exception as e:
-        return f"Insufficient Data (Error: {str(e)[:80]})"
+        import itertools
+        err_trunc = "".join(itertools.islice(str(e), 80))
+        return f"Insufficient Data (Error: {err_trunc})"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Trustpilot Sentiment (BeautifulSoup-powered)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+trustpilot_engine = ReviewEngine()
+
+async def get_trustpilot_reviews(competitor_name: str, url: str) -> dict:
+    """Extracts live Trustpilot data using the review engine."""
+    print(f"    [Trustpilot] Scraping reviews for {competitor_name}...")
+    try:
+        # Extract domain from URL
+        from urllib.parse import urlparse
+        domain = urlparse(url).netloc
+        if not domain:
+            domain = url.split("/")[0] # fallback
+        
+        score, reviews = await asyncio.to_thread(trustpilot_engine.get_review_data, domain)
+        return {
+            "score": score,
+            "reviews": reviews,
+            "count": len(reviews)
+        }
+    except Exception as e:
+        print(f"    [Trustpilot] Failed: {e}")
+        return {"score": 0.0, "reviews": [], "count": 0}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Phase 2-4: Extraction Engine
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
-    """Extracts historical + live + sentiment + review data per competitor."""
+async def run_extractor_agent(url_map: Dict[str, str], industry: str, job_id: str = None) -> tuple:
+    """Parallelized extraction — researches all competitors concurrently."""
     if not url_map:
         return ("No competitor URLs found.", {}), []
 
     competitor_payloads: Dict[str, Any] = {}
     live_urls: List[str] = []
+    
+    # Process up to 3 competitors concurrently to avoid system overload
+    sem = asyncio.Semaphore(3)
 
-    first = True
-    for name, url in url_map.items():
-        if not first:
-            print(f"  [cooldown] 2s pause between competitors...")
-            await asyncio.sleep(2)
-        first = False
+    async def _process_competitor(name: str, url: str):
+        async with sem:
+            print(f"  [{name}] Extracting intelligence...")
+            
+            # Run Wayback + Live + Sentiment concurrently
+            wb_task = get_wayback_snapshot(url)
+            live_task = extract_markdown_with_firecrawl(url)
+            reddit_task = get_reddit_sentiment(name)
+            review_task = get_customer_reviews(name)
+            tp_task = get_trustpilot_reviews(name, url)
 
-        print(f"  [{name}] Extracting intelligence...")
+            wb, live_md, reddit_text, reviews, tp_data = await asyncio.gather(
+                wb_task, live_task, reddit_task, review_task, tp_task
+            )
 
-        # Run Wayback + Live + Sentiment concurrently
-        wb_task = get_wayback_snapshot(url)
-        live_task = extract_markdown_with_firecrawl(url)
-        reddit_task = get_reddit_sentiment(name)
-        review_task = get_customer_reviews(name)
+            live_md = str(live_md)
+            wb_text = wb.get("extracted_text", "")
+            wb_date = wb.get("snapshot_date", "N/A")
+            wb_status = wb.get("wayback_status", "unknown")
 
-        wb, live_md, reddit_text, reviews = await asyncio.gather(
-            wb_task, live_task, reddit_task, review_task
-        )
+            print(f"    [{name}] Done (Live: {len(live_md)} chars | TP Score: {tp_data['score']:.2f})")
 
-        live_md = str(live_md)
-        wb_text = wb.get("extracted_text", "")
-        wb_date = wb.get("snapshot_date", "N/A")
-        wb_status = wb.get("wayback_status", "unknown")
+            # Relevance check
+            if not validate_relevance(live_md, industry, name):
+                competitor_payloads[name] = {"dropped": True}
+                return
 
-        print(f"    Live: {len(live_md)} chars | Wayback: {len(wb_text)} chars | Status: {wb_status}")
+            live_snippet   = _truncate(live_md, 2500)
+            wb_snippet     = _truncate(str(wb_text), 1800)
+            reddit_snippet = _truncate(str(reddit_text), 700)
 
-        # Relevance check
-        if not validate_relevance(live_md, industry, name):
-            competitor_payloads[name] = {"dropped": True}
-            continue
+            competitor_payloads[name] = {
+                "raw_text": (
+                    f"--- COMPETITOR: {name} ---\n"
+                    f"[LIVE SCRAPE | {url}]\n{live_snippet}\n\n"
+                    f"[WAYBACK SNAPSHOT | Date: {wb_date} | Status: {wb_status}]\n{wb_snippet}\n\n"
+                    f"[REDDIT COMMUNITY SENTIMENT]\n{reddit_snippet}\n\n"
+                    f"[TRUSTPILOT REVIEWS]\nScore: {tp_data['score']} | Count: {tp_data['count']}"
+                ),
+                "reviews": reviews,
+                "trustpilot": tp_data,
+                "url": url,
+                "wayback_status": wb_status
+            }
+            live_urls.append(url)
+            
+            # Update granular progress
+            if job_id and job_id in jobs:
+                current_prog = jobs[job_id].get("progress", 35)
+                # Increment by 35% / num_competitors
+                increment = 35 / max(len(url_map), 1)
+                jobs[job_id]["progress"] = min(70, current_prog + increment)
 
-        live_snippet   = _truncate(live_md, 2500)
-        wb_snippet     = _truncate(str(wb_text), 1800)
-        reddit_snippet = _truncate(str(reddit_text), 700)
-
-        competitor_payloads[name] = {
-            "raw_text": (
-                f"--- COMPETITOR: {name} ---\n"
-                f"[LIVE SCRAPE | {url}]\n{live_snippet}\n\n"
-                f"[WAYBACK SNAPSHOT | Date: {wb_date} | Status: {wb_status}]\n{wb_snippet}\n\n"
-                f"[REDDIT COMMUNITY SENTIMENT]\n{reddit_snippet}"
-            ),
-            "reviews": reviews,
-            "url": url,
-            "wayback_status": wb_status
-        }
-        live_urls.append(url)
+    # Launch all tasks
+    tasks = [
+        _process_competitor(name, url) for name, url in url_map.items()
+    ]
+    await asyncio.gather(*tasks)
 
     text_parts: List[str] = [
         str(p["raw_text"]) for p in competitor_payloads.values() if "raw_text" in p
@@ -267,14 +275,17 @@ async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
 # Archiver Agent (was missing — now restored)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async def run_archiver_agent(urls: List[str]) -> Dict[str, str]:
-    """Pushes live competitor pages into the Wayback Machine for proof."""
+    """Pushes live competitor pages into the Wayback Machine in parallel."""
     archive_map = {}
     capped = [u for i, u in enumerate(urls) if i < 5]  # limit to 5
-    for url in capped:
+    
+    async def _archive(url: str):
         print(f"  Archiving: {url}")
         link = await archive_to_wayback(url)
         if link:
             archive_map[url] = link
+
+    await asyncio.gather(*[_archive(u) for u in capped])
     return archive_map
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -327,15 +338,22 @@ async def run_normalization_agent(
         '  }\n'
         "}\n\n"
         "Rules: Extract pricing from LIVE data. Historical from WAYBACK. "
-        "Use Review Sentinel data for review_sentiment. "
+        "Prioritize Trustpilot data for 'top_complaints', 'top_praise', and 'sentiment_score'. "
+        "Use General Intelligence reviews as a secondary source. "
         "If data missing, use null / 'Insufficient Data'. Output ONLY valid JSON."
     )
 
     # Build review context
-    review_parts: List[str] = ["\n[REVIEW SENTINEL DATA]"]
+    review_parts: List[str] = ["\n[CUSTOMER REVIEW DATA]"]
     for name, p in competitor_payloads.items():
         if "reviews" in p:
-            review_parts.append(f"--- {name} ---\n{json.dumps(p['reviews'], indent=2)}")
+            review_parts.append(f"--- {name} (General Intelligence) ---\n{json.dumps(p['reviews'], indent=2)}")
+        if "trustpilot" in p:
+            tp = p["trustpilot"]
+            # To avoid context bloat, we take the top 10 reviews
+            tp_reviews = tp.get("reviews", [])[:10]
+            review_parts.append(f"--- {name} (Trustpilot Scrape) ---\nScore: {tp.get('score')} | Reviews:\n{json.dumps(tp_reviews, indent=2)}")
+    
     review_block: str = "\n".join(review_parts)
 
     llm_prompt = (
@@ -345,15 +363,13 @@ async def run_normalization_agent(
         f"{review_block}"
     )
 
-    print("  [Phase 5] Calling Groq for synthesis...")
-    # Cool down before the big synthesis call
-    await asyncio.sleep(5)
+    print("  [Phase 5] Calling Local LLM for synthesis...")
 
     try:
-        raw_output = await _groq_chat([
+        raw_output = await llm_chat([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": llm_prompt}
-        ], max_tokens=3500)
+        ], json_mode=True)
 
         content = raw_output.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         final_json = json.loads(content)
@@ -361,12 +377,17 @@ async def run_normalization_agent(
         # Ensure review data is always present
         if "competitors" in final_json:
             for name, p in competitor_payloads.items():
-                if name in final_json["competitors"] and "reviews" in p:
-                    final_json["competitors"][name]["review_sentiment"] = p["reviews"]
-
+                if name in final_json["competitors"]:
+                    if "reviews" in p:
+                        final_json["competitors"][name]["review_sentiment"] = p["reviews"]
+                    if "trustpilot" in p:
+                        final_json["competitors"][name]["trustpilot_data"] = p["trustpilot"]
+        
         return final_json
     except json.JSONDecodeError as e:
-        raise ValueError(f"Groq did not return valid JSON: {str(e)}")
+        import itertools
+        err_content = "".join(itertools.islice(content, 200))
+        raise ValueError(f"Local LLM did not return valid JSON: {str(e)}\nOutput was: {err_content}")
     except Exception as e:
         raise ValueError(f"Synthesis Error: {str(e)}")
 
@@ -412,7 +433,7 @@ async def execute_pipeline(job_id: str, user_prompt: str):
         jobs[job_id]["status"] = "EXTRACTING"
         jobs[job_id]["progress"] = 35
         print("\n[Phase 2-4] Extracting intelligence...")
-        payload_data, live_urls = await run_extractor_agent(url_map, industry)
+        payload_data, live_urls = await run_extractor_agent(url_map, industry, job_id)
 
         # Archiver (parallel)
         jobs[job_id]["status"] = "ARCHIVING"
@@ -496,6 +517,84 @@ async def analyze_sync(request: AnalyzeRequest):
     if job["status"] == "FAILED":
         raise HTTPException(status_code=500, detail=job["error"])
     return {"parsed_json": job["result"], "archive_proof": job.get("archive_proof", {})}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# New Dashboard Endpoints
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+class InsightsRequest(BaseModel):
+    export_path: str
+
+@app.post("/api/v1/insights")
+async def generate_insights_endpoint(request: InsightsRequest):
+    """Generates analytical insights from a saved export file."""
+    if not os.path.exists(request.export_path):
+        raise HTTPException(status_code=400, detail="Export file not found.")
+
+    try:
+        from differ import diff_from_file
+        diff = diff_from_file(request.export_path)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Failed to normalise or diff: {str(e)}")
+
+    try:
+        from insight_engine import get_insights
+        insights = await get_insights(diff)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM Insights failed: {str(e)}")
+
+    diff_list_clean = []
+    for cd in diff.competitor_diffs:
+        diff_list_clean.append({
+            "competitor_name": cd.competitor_name,
+            "period": {
+                "from": cd.historical_date.isoformat() if cd.historical_date else None,
+                "to": cd.live_date.isoformat() if cd.live_date else None
+            },
+            "pricing_changes": [p.model_dump() for p in cd.pricing_changes],
+            "features_added": cd.features_added,
+            "features_removed": cd.features_removed,
+            "sentiment_score_delta": cd.sentiment_score_delta,
+            "new_complaints": cd.new_complaints,
+            "programmatic_summary": cd.programmatic_summary
+        })
+
+    return {
+        "meta": {
+            "startup_query": diff.startup_query,
+            "industry": diff.industry,
+            "export_timestamp": diff.export_timestamp.isoformat(),
+            "competitors_analysed": len(diff.competitor_diffs)
+        },
+        "diffs": diff_list_clean,
+        "insights": insights
+    }
+
+@app.post("/api/v1/analyze-and-insights")
+async def analyze_and_insights(request: AnalyzeRequest):
+    """Synchronous combined endpoint for the dashboard."""
+    # Run analysis
+    analysis_res = await analyze_sync(request)
+    
+    # Locate the newest export file
+    exports_dir = "data_exports"
+    newest_file = None
+    if os.path.exists(exports_dir):
+        files = [
+            os.path.join(exports_dir, f)
+            for f in os.listdir(exports_dir)
+            if f.endswith(".json") and os.path.isfile(os.path.join(exports_dir, f))
+        ]
+        if files:
+            newest_file = max(files, key=os.path.getmtime)
+
+    if not newest_file:
+         raise HTTPException(status_code=500, detail="Failed to locate export file.")
+
+    # Generate insights
+    insights_req = InsightsRequest(export_path=newest_file)
+    insights_res = await generate_insights_endpoint(insights_req)
+
+    return {"analysis_raw": analysis_res, "insights_pipeline": insights_res}
 
 if __name__ == "__main__":
     import uvicorn
