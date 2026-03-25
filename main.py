@@ -183,17 +183,16 @@ async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
             )
             continue
 
-        # Aggressively truncate each source to keep Phase 5 payload under Groq's limit.
-        # Budget: ~2,500 chars/competitor × 5 competitors = ~12,500 chars total (safe for 8k context)
-        live_snippet   = _truncate(live_md, 1200)   # just enough for pricing table + tagline
-        wb_snippet     = _truncate(str(wb_text), 800)  # historical pricing snapshot
-        reddit_snippet = _truncate(str(reddit_text), 400)  # top complaint
+        # Truncate each source — sufficient for pricing + features + sentiment analysis
+        live_snippet   = _truncate(live_md, 2500)   # enough for pricing table, features, tagline
+        wb_snippet     = _truncate(str(wb_text), 1800)  # 12-mo historical snapshot
+        reddit_snippet = _truncate(str(reddit_text), 700)  # top complaints + praise
 
         extracted_data.append(
             f"--- COMPETITOR: {name} ---\n"
-            f"[LIVE]\n{live_snippet}\n\n"
-            f"[WAYBACK | {wb_date} | {wb_status}]\n{wb_snippet}\n\n"
-            f"[REDDIT]\n{reddit_snippet}"
+            f"[LIVE SCRAPE | {url}]\n{live_snippet}\n\n"
+            f"[WAYBACK SNAPSHOT | Date: {wb_date} | Status: {wb_status}]\n{wb_snippet}\n\n"
+            f"[REDDIT COMMUNITY SENTIMENT]\n{reddit_snippet}"
         )
         live_urls.append(url)
 
@@ -240,27 +239,50 @@ async def run_normalization_agent(
     ) if archive_map else "No archives created."
 
     system_prompt = (
-        f"You are a market intelligence synthesizer. Industry: {industry}. "
-        f"Competitors: {competitors_known}.\n\n"
-        "Output ONLY a flat JSON object with these exact keys (no extra text, no markdown fences):\n"
-        "- analysis_metadata_target_company\n"
-        "- analysis_metadata_target_industry\n"
-        "- analysis_metadata_scraped_at (ISO timestamp)\n"
-        "- analysis_metadata_competitors_analyzed (integer)\n"
-        "For each competitor N (1-5):\n"
-        "- competitor_N_name\n"
-        "- competitor_N_current_base_price (from LIVE data; lowest paid tier)\n"
-        "- competitor_N_historical_base_price (from WAYBACK data)\n"
-        "- competitor_N_historical_price_delta (% change if both available)\n"
-        "- competitor_N_top_reddit_complaint (from REDDIT data)\n"
-        "- competitor_N_hero_tagline (from LIVE data)\n"
-        "- competitor_N_wayback_status (copy from the WAYBACK status tag)\n"
-        "Plus these market intelligence keys:\n"
-        "- market_intelligence_pricing_vacuum (specific $ gap, not generic advice)\n"
-        "- market_intelligence_feature_whitespace (missing features with evidence)\n"
-        "- market_intelligence_overused_messaging_cluster (repeated phrases across competitors)\n"
-        "- market_intelligence_pricing_trend (trend with numbers)\n\n"
-        "Rules: If data is missing write 'Insufficient Data'. Output valid JSON ONLY."
+        f"You are a senior competitive intelligence analyst. Industry: {industry}. "
+        f"Competitors analysed: {competitors_known}.\n\n"
+        "Produce a SINGLE valid JSON object (no markdown fences, no extra text) with this EXACT structure:\n"
+        "{\n"
+        '  "meta": {"startup_industry": str, "scraped_at": ISO8601, "competitors_count": int, "snapshot_gap_months": 12},\n'
+        '  "competitors": {\n'
+        '    "<CompetitorName>": {\n'
+        '      "tagline": str,\n'
+        '      "target_segment": str,\n'
+        '      "positioning": "budget|mid-market|premium|enterprise",\n'
+        '      "pricing_model": "per-seat|flat-rate|usage-based|freemium|free",\n'
+        '      "current_pricing": [{"tier": str, "price_usd": float_or_null, "billing": "monthly|annual|one-time"}],\n'
+        '      "historical_pricing": [{"tier": str, "price_usd": float_or_null}],\n'
+        '      "pricing_delta_pct": float_or_null,\n'
+        '      "key_features": [str],\n'
+        '      "recent_additions": [str],\n'
+        '      "recent_removals": [str],\n'
+        '      "competitive_moat": str,\n'
+        '      "messaging_tone": "technical|consumer|enterprise|developer",\n'
+        '      "top_complaints": [str],\n'
+        '      "top_praise": [str],\n'
+        '      "sentiment_score": float_between_neg1_and_1,\n'
+        '      "wayback_status": str\n'
+        '    }\n'
+        '  },\n'
+        '  "market_analysis": {\n'
+        '    "common_features": [str],\n'
+        '    "feature_gaps": [str],\n'
+        '    "pricing_range": {"min_usd": float, "max_usd": float, "avg_usd": float},\n'
+        '    "pricing_trend": str,\n'
+        '    "pricing_vacuum": str,\n'
+        '    "overused_messaging": [str],\n'
+        '    "market_positioning_map": [{"name": str, "price_score": 0-10, "feature_richness": 0-10, "sentiment_score": -1_to_1}],\n'
+        '    "entry_opportunities": [str],\n'
+        '    "differentiation_angles": [str]\n'
+        '  }\n'
+        "}\n\n"
+        "Rules:\n"
+        "1. Extract all pricing from the LIVE data. Extract historical pricing from WAYBACK data.\n"
+        "2. pricing_delta_pct = ((current - historical) / historical * 100) if both exist, else null.\n"
+        "3. Use Reddit data for top_complaints and top_praise.\n"
+        "4. market_positioning_map: price_score 1=cheapest/free .. 10=most expensive; feature_richness 1=bare .. 10=full-featured.\n"
+        "5. If data is missing, use null for numbers and 'Insufficient Data' for strings.\n"
+        "6. Output valid JSON only — no markdown, no explanation text."
     )
 
     llm_prompt = (
@@ -274,7 +296,7 @@ async def run_normalization_agent(
         raw_output = await _groq_chat([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": llm_prompt}
-        ], max_tokens=2048)
+        ], max_tokens=3000)
 
         # Strip potential markdown fences
         content = raw_output.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()

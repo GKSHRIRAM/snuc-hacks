@@ -11,7 +11,7 @@ async def get_wayback_snapshot(url: str, max_retries: int = 3) -> Dict[str, str]
     Agent Tool: Ping the Wayback CDX API with exponential backoff retry.
     ALWAYS returns a dict — never None. On failure, includes wayback_status with the error reason.
     """
-    target_date = (datetime.now() - timedelta(days=180)).strftime("%Y%m%d")
+    target_date = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")  # 12 months for wider delta
 
     cdx_url = (
         f"https://web.archive.org/cdx/search/cdx"
