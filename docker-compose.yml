@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: marketlens-searxng
+    ports:
+      - "8080:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+      # Explicitly enable JSON formatted outputs for our automated agents
+      - SEARXNG_SETTINGS_SEARCH_FORMATS=html,json
+    restart: unless-stopped
