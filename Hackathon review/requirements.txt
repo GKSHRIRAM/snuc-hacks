@@ -1,6 +1,0 @@
-streamlit
-praw
-requests
-transformers
-torch
-python-dotenv
