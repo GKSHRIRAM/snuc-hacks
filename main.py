@@ -183,12 +183,17 @@ async def run_extractor_agent(url_map: Dict[str, str], industry: str) -> tuple:
             )
             continue
 
-        # Label data clearly for the LLM
+        # Aggressively truncate each source to keep Phase 5 payload under Groq's limit.
+        # Budget: ~2,500 chars/competitor × 5 competitors = ~12,500 chars total (safe for 8k context)
+        live_snippet   = _truncate(live_md, 1200)   # just enough for pricing table + tagline
+        wb_snippet     = _truncate(str(wb_text), 800)  # historical pricing snapshot
+        reddit_snippet = _truncate(str(reddit_text), 400)  # top complaint
+
         extracted_data.append(
             f"--- COMPETITOR: {name} ---\n"
-            f"[LIVE SCRAPE from {url}]\n{_truncate(live_md, 6000)}\n\n"
-            f"[WAYBACK 6-MONTH SCRAPE from {wb_url} | Date: {wb_date} | Status: {wb_status}]\n{_truncate(str(wb_text), 5000)}\n\n"
-            f"[REDDIT SENTIMENT]\n{reddit_text}"
+            f"[LIVE]\n{live_snippet}\n\n"
+            f"[WAYBACK | {wb_date} | {wb_status}]\n{wb_snippet}\n\n"
+            f"[REDDIT]\n{reddit_snippet}"
         )
         live_urls.append(url)
 
@@ -234,66 +239,29 @@ async def run_normalization_agent(
         [f"  {url} -> {link}" for url, link in archive_map.items()]
     ) if archive_map else "No archives created."
 
-    system_prompt = f"""[SYSTEM INSTRUCTIONS]
-You are the elite Market Intelligence Synthesizer for the MarketLens BI Engine.
-Your ONLY job is to take raw, pre-scraped data from multiple sources (Live Website Markdown, Historical Wayback Machine text, and Reddit API sentiment) and synthesize it into a strict analytical payload.
-
-The user is building a startup in the "{industry}" space.
-Known competitors: {competitors_known}.
-
-You operate under three absolute directives:
-1. JSON ONLY. You must output strictly in valid flat JSON format.
-2. NO HALLUCINATION. If data is missing from the provided text, output "Insufficient Data". Do not guess.
-3. NO FLUFF. Never output generic business advice like "focus on unique value" or "leverage strengths." Market insights must contain specific mathematical pricing gaps, feature vacuums, or exact wording overlaps.
-
-[DATA INPUT FORMAT]
-You will receive data formatted as:
---- COMPETITOR: {{Name}} ---
-[LIVE SCRAPE]...
-[WAYBACK 6-MONTH SCRAPE]...
-[REDDIT SENTIMENT]...
-
-[REQUIRED JSON OUTPUT SCHEMA]
-Structure your output exactly like this example JSON. 
-{{
-  "analysis_metadata_target_company": "UserStartupName",
-  "analysis_metadata_target_industry": "Productivity Software",
-  "analysis_metadata_scraped_at": "2026-03-25T16:00:00Z",
-  "analysis_metadata_competitors_analyzed": 2,
-  
-  "competitor_1_name": "Monday.com",
-  "competitor_1_current_base_price": "$12 per seat/month",
-  "competitor_1_historical_base_price": "$9 per seat/month (Sep 2025)",
-  "competitor_1_historical_price_delta": "+$3/seat (+33% increase in 6 months)",
-  "competitor_1_top_reddit_complaint": "Offline mode sync failures delete work",
-  "competitor_1_hero_tagline": "A platform built for a new way of working",
-  "competitor_1_wayback_status": "OK",
-  "competitor_1_archive_proof_url": "https://web.archive.org/web/20260325/monday.com/pricing",
-
-  "competitor_2_name": "ClickUp",
-  "competitor_2_current_base_price": "$7 per member/month",
-  "competitor_2_historical_base_price": "Insufficient Data",
-  "competitor_2_historical_price_delta": "Insufficient Data",
-  "competitor_2_top_reddit_complaint": "Feature overload causes massive UI latency",
-  "competitor_2_hero_tagline": "One app to replace them all",
-  "competitor_2_wayback_status": "CDX API request timed out after 15s",
-  "competitor_2_archive_proof_url": "https://web.archive.org/web/20260325/clickup.com/pricing",
-
-  "market_intelligence_pricing_vacuum": "No competitor offers a flat-rate team plan. All use per-seat pricing ($7-$12/seat). A $49/mo unlimited-seats plan would undercut the entire market for teams of 5+.",
-  "market_intelligence_feature_whitespace": "All 5 competitors lack native offline-first architecture. This is the #1 Reddit complaint visible across scraped marketing copy.",
-  "market_intelligence_overused_messaging_cluster": "4 out of 5 competitors use variations of 'all-in-one' or 'one tool' in their hero tagline. Differentiate by avoiding this phrase entirely.",
-  "market_intelligence_pricing_trend": "Monday.com raised Basic from $9 to $12/seat (+33%) in 6 months. Market is trending toward price increases — opportunity to lock in lower pricing as a growth lever."
-}}
-
-[EXECUTION INSTRUCTIONS]
-1. Read the provided raw data for each competitor.
-2. Extract current_base_price from the LIVE SCRAPE data (lowest paid tier).
-3. Extract historical_base_price from the WAYBACK SCRAPE data.
-4. Calculate historical_price_delta by comparing live vs historical (include % change).
-5. Extract the top structural complaint from the REDDIT SENTIMENT section.
-6. Calculate the market_intelligence section using facts from the text.
-7. Output ONLY valid, parsable JSON. No markdown backticks, no explanatory text, no nested objects.
-8. If a competitor was DROPPED, still include it but write "DROPPED: URL pointed to wrong company" for all fields."""
+    system_prompt = (
+        f"You are a market intelligence synthesizer. Industry: {industry}. "
+        f"Competitors: {competitors_known}.\n\n"
+        "Output ONLY a flat JSON object with these exact keys (no extra text, no markdown fences):\n"
+        "- analysis_metadata_target_company\n"
+        "- analysis_metadata_target_industry\n"
+        "- analysis_metadata_scraped_at (ISO timestamp)\n"
+        "- analysis_metadata_competitors_analyzed (integer)\n"
+        "For each competitor N (1-5):\n"
+        "- competitor_N_name\n"
+        "- competitor_N_current_base_price (from LIVE data; lowest paid tier)\n"
+        "- competitor_N_historical_base_price (from WAYBACK data)\n"
+        "- competitor_N_historical_price_delta (% change if both available)\n"
+        "- competitor_N_top_reddit_complaint (from REDDIT data)\n"
+        "- competitor_N_hero_tagline (from LIVE data)\n"
+        "- competitor_N_wayback_status (copy from the WAYBACK status tag)\n"
+        "Plus these market intelligence keys:\n"
+        "- market_intelligence_pricing_vacuum (specific $ gap, not generic advice)\n"
+        "- market_intelligence_feature_whitespace (missing features with evidence)\n"
+        "- market_intelligence_overused_messaging_cluster (repeated phrases across competitors)\n"
+        "- market_intelligence_pricing_trend (trend with numbers)\n\n"
+        "Rules: If data is missing write 'Insufficient Data'. Output valid JSON ONLY."
+    )
 
     llm_prompt = (
         f"Client Startup: {user_prompt}\n\n"
