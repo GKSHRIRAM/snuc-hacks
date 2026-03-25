@@ -1,39 +1,33 @@
 import streamlit as st
 from dotenv import load_dotenv
-from engine.reddit_engine import RedditEngine
-from engine.review_engine import ReviewEngine
+from engine import RedditEngine, ReviewEngine
 
-load_dotenv() # Reads the .env file
+load_dotenv() # Crucial: links your .env keys to the code
 
-st.set_page_config(page_title="Sentilyze", page_icon="📊")
-st.title("Sentilyze: Market Sentiment Tool")
+st.set_page_config(page_title="Domain Intel", page_icon="🔍")
+st.title("🕵️ Domain Intelligence Collector")
 
-# User Input
-domain = st.text_input("Enter a Company or Market Keyword", placeholder="e.g. OpenAI, Nvidia, SaaS")
+target = st.text_input("Enter Company or Product Name (e.g., Postman)")
 
-if st.button("Analyze Now"):
-    if not domain:
-        st.warning("Please enter a keyword first.")
+if st.button("Generate Intelligence Report"):
+    if not target:
+        st.warning("Please enter a target name.")
     else:
-        with st.spinner('Gathering cross-platform data...'):
-            re = RedditEngine()
-            ge = ReviewEngine()
+        with st.spinner(f"Scouring the web for {target}..."):
+            # Initialize the brains
+            red = RedditEngine()
+            rev = ReviewEngine()
             
-            # Run calculations
-            red_score = re.get_sentiment(domain)
-            rev_score = ge.get_g2_score(domain)
+            # Fetch scores
+            social_val = red.get_sentiment(target)
+            market_val = rev.get_review_score(target)
             
             # Display metrics
-            st.subheader(f"Analysis for: {domain}")
+            st.divider()
             c1, c2 = st.columns(2)
-            c1.metric("Reddit Pulse", f"{red_score:.2f}")
-            c2.metric("Review Score (G2)", f"{rev_score:.2f}")
+            c1.metric("Reddit Sentiment", f"{social_val:.2f}")
+            c2.metric("G2 Market Score", f"{market_val:.2f}")
             
-            # Final Sentiment Logic
-            avg = (red_score + rev_score) / 2
-            if avg > 0.1:
-                st.success("Overall Sentiment: **POSITIVE** 🚀")
-            elif avg < -0.1:
-                st.error("Overall Sentiment: **NEGATIVE** 📉")
-            else:
-                st.info("Overall Sentiment: **NEUTRAL** ⚖️")
+            # Final Calculation
+            total = (social_val + market_val) / 2
+            st.info(f"Overall Market Confidence: {total:.2f}")
