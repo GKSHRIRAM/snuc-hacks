@@ -1,751 +1,638 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MarketLens — Competitive Intelligence</title>
-  <meta name="description" content="AI-powered competitive intelligence with live and historical market data.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>MarketLens | Competitive Intelligence Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            brand: { 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb' },
+            slate: { 850: '#141e30', 900: '#0f172a', 950: '#020617' }
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:       #080c14;
-      --surface:  #0f1624;
-      --card:     #131d2e;
-      --border:   #1e2d42;
-      --accent:   #3b7bff;
-      --accent2:  #00d4aa;
-      --warn:     #ff6b6b;
-      --text:     #e2e8f0;
-      --muted:    #64748b;
-      --label:    #94a3b8;
-      --radius:   14px;
-      --font:     'Inter', system-ui, sans-serif;
+    body {
+      background-color: #020617;
+      color: #f8fafc;
     }
-    html { scroll-behavior: smooth; }
-    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6; }
 
-    /* ─── Layout ─── */
-    .container { max-width: 1440px; margin: 0 auto; padding: 0 24px; }
-    .hidden { display: none !important; }
-
-    /* ─── Input Page ─── */
-    #page-input {
-      min-height: 100vh; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; padding: 40px 24px;
-    }
-    .brand { text-align: center; margin-bottom: 48px; }
-    .brand h1 {
-      font-size: 2.8rem; font-weight: 800; letter-spacing: -0.04em;
-      background: linear-gradient(135deg, #fff 30%, var(--accent) 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    }
-    .brand p { color: var(--muted); margin-top: 10px; font-size: 1.05rem; }
-
-    .input-card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 20px; padding: 40px; width: 100%; max-width: 660px;
-      box-shadow: 0 0 80px rgba(59,123,255,0.08);
-    }
-    .input-card label { display: block; font-weight: 600; font-size: 1rem; margin-bottom: 12px; color: var(--text); }
-    textarea#startup-desc {
-      width: 100%; height: 130px; background: var(--bg); border: 1px solid var(--border);
-      border-radius: 10px; padding: 14px 16px; color: var(--text); font-family: var(--font);
-      font-size: 0.95rem; resize: none; outline: none; transition: border-color .2s;
-    }
-    textarea#startup-desc:focus { border-color: var(--accent); }
-    textarea#startup-desc::placeholder { color: var(--muted); }
-
-    .btn-primary {
-      margin-top: 16px; width: 100%; padding: 16px;
-      background: var(--accent); color: #fff; font-weight: 700; font-size: 1rem;
-      border: none; border-radius: 10px; cursor: pointer; transition: all .2s;
-      letter-spacing: 0.01em;
-    }
-    .btn-primary:hover:not(:disabled) { background: #4d8aff; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(59,123,255,0.3); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    /* Progress */
-    #progress-wrap { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--border); }
-    .progress-step { font-size: 0.85rem; color: var(--accent); font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-    .spinner { width: 16px; height: 16px; border: 2px solid rgba(59,123,255,0.2); border-left-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .progress-track { height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; }
-    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width .4s ease; width: 0%; }
-
-    /* ─── Results Page ─── */
-    #page-results { padding: 32px 0 80px; }
-
-    /* Topbar */
-    .topbar {
-      background: var(--card); border-bottom: 1px solid var(--border);
-      padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
-      flex-wrap: wrap; gap: 12px; position: sticky; top: 0; z-index: 100;
+    .glass-card {
+      background: rgba(15, 23, 42, 0.6);
       backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 1rem;
     }
-    .topbar-brand { font-weight: 700; font-size: 1rem; letter-spacing: -0.02em; color: var(--text); }
-    .topbar-meta { display: flex; gap: 24px; flex-wrap: wrap; }
-    .meta-pill { font-size: 0.78rem; color: var(--muted); }
-    .meta-pill strong { color: var(--text); font-weight: 600; }
-    .btn-reset { background: none; border: 1px solid var(--border); color: var(--label); font-size: 0.8rem; font-weight: 500; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-family: var(--font); transition: all .2s; }
-    .btn-reset:hover { border-color: var(--accent); color: var(--accent); }
 
-    /* Tabs */
-    .tabs { display: flex; gap: 4px; padding: 20px 0 0; border-bottom: 1px solid var(--border); margin-bottom: 32px; overflow-x: auto; }
-    .tab { padding: 10px 20px; border-radius: 8px 8px 0 0; font-size: 0.85rem; font-weight: 600; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; transition: all .2s; white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none; font-family: var(--font); }
-    .tab:hover { color: var(--text); }
-    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; animation: fadeUp .3s ease; }
-    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    /* Hide scrollbar for tabs */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
 
-    /* Cards */
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
-    .card-header { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 700; margin-bottom: 14px; }
-    .card + .card { margin-top: 16px; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-    @media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
 
-    /* Competitor header strip */
-    .comp-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
-    .comp-name { font-size: 1.2rem; font-weight: 700; color: var(--text); }
-    .comp-tagline { font-size: 0.85rem; color: var(--muted); margin-top: 4px; font-style: italic; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
-    .badge-blue  { background: rgba(59,123,255,.15); color: var(--accent); border: 1px solid rgba(59,123,255,.3); }
-    .badge-green { background: rgba(0,212,170,.12); color: var(--accent2); border: 1px solid rgba(0,212,170,.3); }
-    .badge-red   { background: rgba(255,107,107,.12); color: var(--warn); border: 1px solid rgba(255,107,107,.3); }
-    .badge-gray  { background: rgba(100,116,139,.15); color: var(--muted); border: 1px solid rgba(100,116,139,.25); }
+    .tab-btn {
+      transition: all 0.2s;
+      border-bottom: 2px solid transparent;
+    }
 
-    /* Pricing table */
-    table.pricing-tbl { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-    .pricing-tbl thead th { text-align: left; padding: 6px 10px; color: var(--muted); font-weight: 600; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); }
-    .pricing-tbl tbody td { padding: 9px 10px; border-bottom: 1px solid rgba(30,45,66,.5); vertical-align: middle; }
-    .pricing-tbl tbody tr:last-child td { border-bottom: none; }
-    .price-change-up   { color: var(--warn); }
-    .price-change-down { color: var(--accent2); }
+    .tab-btn.active {
+      color: #60a5fa;
+      border-bottom-color: #60a5fa;
+    }
 
-    /* Feature pills */
-    .pill-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .pill { padding: 4px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 500; }
-    .pill-add { background: rgba(0,212,170,.1); color: var(--accent2); border: 1px solid rgba(0,212,170,.25); }
-    .pill-rem { background: rgba(255,107,107,.08); color: var(--warn); border: 1px solid rgba(255,107,107,.2); text-decoration: line-through; }
-    .pill-feat { background: rgba(59,123,255,.1); color: var(--accent); border: 1px solid rgba(59,123,255,.2); }
-
-    /* Complaints list */
-    .complaint-item { font-size: 0.83rem; color: var(--label); padding: 8px 0; border-bottom: 1px solid rgba(30,45,66,.5); }
-    .complaint-item:last-child { border-bottom: none; }
-    .complaint-item::before { content: "—"; color: var(--warn); margin-right: 8px; }
-    .praise-item::before { content: "—"; color: var(--accent2); margin-right: 8px; }
-    .praise-item { font-size: 0.83rem; color: var(--label); padding: 8px 0; border-bottom: 1px solid rgba(30,45,66,.5); }
-
-    /* Section title */
-    .section-title { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-
-    /* Chart container */
-    .chart-wrap { position: relative; height: 300px; }
-    .chart-wrap-tall { position: relative; height: 400px; }
-
-    /* Intelligence cards */
-    .intel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
-    .intel-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
-    .intel-card h4 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; font-weight: 700; }
-    .intel-card p, .intel-card li { font-size: 0.85rem; color: var(--label); line-height: 1.7; }
-    .intel-card ul { list-style: none; padding: 0; }
-    .intel-card li::before { content: "›"; margin-right: 8px; color: var(--accent); font-weight: 700; }
-
-    /* Moat / positioning */
-    .moat-text { font-size: 0.85rem; color: var(--label); line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-
-    /* Full analysis prose */
-    .prose { font-size: 0.9rem; color: var(--label); line-height: 1.9; }
-    .prose p + p { margin-top: 14px; }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
-
-    /* Responsive */
-    @media (max-width: 640px) { .brand h1 { font-size: 2rem; } .input-card { padding: 24px; } }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
-<body>
 
-<!-- ═══════════ INPUT PAGE ═══════════ -->
-<div id="page-input">
-  <div class="brand">
-    <h1>MarketLens</h1>
-    <p>Live and historical competitive intelligence — automated.</p>
-  </div>
-  <div class="input-card">
-    <label for="startup-desc">Describe your startup idea</label>
-    <textarea id="startup-desc" placeholder="e.g. A SaaS tool that auto-generates compliance reports for fintech startups..."></textarea>
-    <button class="btn-primary" id="btn-analyze">Run Market Analysis</button>
-    <div id="progress-wrap" class="hidden">
-      <div class="progress-step"><span class="spinner"></span><span id="progress-text">Initialising pipeline...</span></div>
-      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+<body class="min-h-screen text-slate-200 antialiased selection:bg-brand-500/30">
+
+  <!-- PAGE 1: INPUT -->
+  <div id="page-input" class="page active flex min-h-screen flex-col items-center justify-center p-6">
+    <div class="w-full max-w-2xl text-center mb-10">
+      <div
+        class="inline-flex items-center justify-center space-x-2 bg-brand-500/10 text-brand-400 px-3 py-1 rounded-full text-sm font-medium mb-6 border border-brand-500/20">
+        <span class="w-2 h-2 rounded-full bg-brand-400 animate-pulse"></span>
+        <span>MarketLens V4 Pipeline</span>
+      </div>
+      <h1
+        class="text-5xl font-bold tracking-tight mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
+        Deep Market Intelligence
+      </h1>
+      <p class="text-slate-400 text-lg">Define your startup idea below. We'll discover your competitors, scrape 12
+        months of pricing history, and extract community sentiment.</p>
+    </div>
+
+    <div class="w-full max-w-2xl glass-card p-8 shadow-2xl shadow-brand-500/5">
+      <label class="block text-sm font-semibold text-slate-300 mb-2">Startup Concept or Description</label>
+      <textarea id="startup-desc" rows="4"
+        class="w-full bg-slate-900/50 border border-slate-700 rounded-lg p-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+        placeholder="e.g. A cloud-based accounting software for freelancers that integrates with Stripe..."></textarea>
+
+      <button id="btn-analyze"
+        class="mt-6 w-full bg-brand-600 hover:bg-brand-500 text-white font-semibold py-4 rounded-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center shadow-lg shadow-brand-500/20">
+        Run Full Pipeline Sequence
+      </button>
+
+      <!-- Progress Tracker -->
+      <div id="progress-wrap" class="hidden mt-8 pt-6 border-t border-slate-800/50">
+        <div class="flex items-center justify-between text-sm mb-3">
+          <span id="progress-text" class="text-brand-400 font-medium animate-pulse flex items-center">
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-brand-400" xmlns="http://www.w3.org/2000/svg" fill="none"
+              viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+              </path>
+            </svg>
+            Initializing pipeline...
+          </span>
+          <span id="progress-pct" class="text-slate-400 font-mono">0%</span>
+        </div>
+        <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+          <div id="progress-fill"
+            class="bg-gradient-to-r from-brand-600 to-teal-400 h-2 rounded-full transition-all duration-500"
+            style="width: 0%"></div>
+        </div>
+        <p class="text-xs text-slate-500 mt-3 text-center">Fetching live data, Wayback Machine snapshots, and Trustpilot
+          reviews...</p>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- ═══════════ RESULTS PAGE ═══════════ -->
-<div id="page-results" class="hidden">
-  <!-- Sticky top bar -->
-  <div class="topbar">
-    <span class="topbar-brand">MarketLens</span>
-    <div class="topbar-meta">
-      <span class="meta-pill">Industry: <strong id="m-industry">—</strong></span>
-      <span class="meta-pill">Competitors: <strong id="m-count">—</strong></span>
-      <span class="meta-pill">Snapshot gap: <strong>12 months</strong></span>
-      <span class="meta-pill">Generated: <strong id="m-date">—</strong></span>
-    </div>
-    <button class="btn-reset" id="btn-reset">New Analysis</button>
-  </div>
+  <!-- PAGE 2: RESULTS -->
+  <div id="page-results" class="hidden bg-slate-950 min-h-screen">
 
-  <div class="container">
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab active" data-tab="tab-overview">Overview</button>
-      <button class="tab" data-tab="tab-competitors">Competitor Deep Dive</button>
-      <button class="tab" data-tab="tab-charts">Charts & Positioning</button>
-      <button class="tab" data-tab="tab-intelligence">Market Intelligence</button>
-    </div>
-
-    <!-- ── OVERVIEW TAB ── -->
-    <div id="tab-overview" class="tab-panel active">
-      <div class="grid-2" style="margin-bottom:16px">
-        <div class="card">
-          <div class="card-header">Pricing Range</div>
-          <div id="ov-pricing-range" style="font-size:1.8rem;font-weight:800;color:var(--text)">—</div>
-          <div id="ov-pricing-sub" style="font-size:0.82rem;color:var(--muted);margin-top:4px">across all competitors</div>
-        </div>
-        <div class="card">
-          <div class="card-header">Pricing Trend</div>
-          <div id="ov-pricing-trend" style="font-size:0.88rem;color:var(--label);line-height:1.6">—</div>
-        </div>
-      </div>
-
-      <!-- Pricing Vacuum + Differentiation Angles -->
-      <div class="grid-2" style="margin-bottom:16px">
-        <div class="card">
-          <div class="card-header">Pricing Vacuum</div>
-          <p id="ov-vacuum" style="font-size:0.88rem;color:var(--label);line-height:1.7">—</p>
-        </div>
-        <div class="card">
-          <div class="card-header">Entry Opportunities</div>
-          <ul id="ov-opportunities" style="font-size:0.85rem;color:var(--label);list-style:none;padding:0;line-height:1.8"></ul>
-        </div>
-      </div>
-
-      <!-- Common Features + Overused Messaging -->
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-header">Features Every Competitor Has</div>
-          <div id="ov-common" class="pill-wrap"></div>
-        </div>
-        <div class="card">
-          <div class="card-header">Overused Messaging — Avoid These</div>
-          <div id="ov-messaging" class="pill-wrap"></div>
-        </div>
-      </div>
-
-      <!-- Competitor Summary Strip -->
-      <div style="margin-top:16px">
-        <div class="section-title">Competitor At a Glance</div>
-        <div id="ov-comp-strip"></div>
-      </div>
-    </div>
-
-    <!-- ── DEEP DIVE TAB ── -->
-    <div id="tab-competitors" class="tab-panel">
-      <div id="competitor-cards"></div>
-    </div>
-
-    <!-- ── CHARTS TAB ── -->
-    <div id="tab-charts" class="tab-panel">
-      <div class="grid-2" style="margin-bottom:16px">
-        <div class="card">
-          <div class="section-title">Pricing Comparison — Current vs. Historical</div>
-          <div class="chart-wrap"><canvas id="chart-pricing"></canvas></div>
-        </div>
-        <div class="card">
-          <div class="section-title">Community Sentiment Score</div>
-          <div class="chart-wrap"><canvas id="chart-sentiment"></canvas></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="section-title">Market Positioning Map — Price vs. Feature Richness</div>
-        <div class="chart-wrap-tall"><canvas id="chart-positioning"></canvas></div>
-      </div>
-    </div>
-
-    <!-- ── INTELLIGENCE TAB ── -->
-    <div id="tab-intelligence" class="tab-panel">
-      <div class="intel-grid">
-        <div class="intel-card">
-          <h4>Pricing Vacuum</h4>
-          <p id="int-vacuum">—</p>
-        </div>
-        <div class="intel-card">
-          <h4>Feature Gaps</h4>
-          <ul id="int-feature-gaps"></ul>
-        </div>
-        <div class="intel-card">
-          <h4>Differentiation Angles</h4>
-          <ul id="int-diff-angles"></ul>
-        </div>
-        <div class="intel-card">
-          <h4>Overused Messaging</h4>
-          <ul id="int-messaging"></ul>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom:16px">
-        <div class="section-title">AI Deep-Dive Analysis</div>
-        <div id="int-full-analysis" class="prose">—</div>
-      </div>
-    </div>
-  </div><!-- /container -->
-</div><!-- /page-results -->
-
-<script>
-const API = "http://localhost:8000";
-const steps = ["Identifying competitors...", "Discovering URLs...", "Scraping live data...", "Fetching 12-month snapshot...", "Analysing Reddit sentiment...", "Synthesising with AI...", "Generating intelligence...", "Done"];
-let pInt;
-
-document.getElementById('btn-analyze').addEventListener('click', async () => {
-  const desc = document.getElementById('startup-desc').value.trim();
-  if (!desc) return alert("Please describe your startup first.");
-
-  const btn = document.getElementById('btn-analyze');
-  btn.disabled = true;
-  document.getElementById('startup-desc').disabled = true;
-  document.getElementById('progress-wrap').classList.remove('hidden');
-
-  // fake progress
-  let pct = 0, si = 0;
-  const fill = document.getElementById('progress-fill');
-  const ptext = document.getElementById('progress-text');
-  ptext.textContent = steps[0];
-  pInt = setInterval(() => {
-    pct += Math.random() * 1.5 + 0.3;
-    if (pct > 94) pct = 94;
-    fill.style.width = pct + '%';
-    const ni = Math.min(Math.floor(pct / 94 * steps.length), steps.length - 2);
-    if (ni !== si) { si = ni; ptext.textContent = steps[si]; }
-  }, 1200);
-
-  try {
-    // 1. Start Analysis (Async)
-    const startRes = await fetch(`${API}/api/v1/analyze`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({user_prompt: desc})
-    });
-    if (!startRes.ok) throw new Error(await startRes.text());
-    const { job_id } = await startRes.json();
-
-    // 2. Poll Status
-    let completedData = null;
-    while (true) {
-      const statusRes = await fetch(`${API}/api/v1/status/${job_id}`);
-      const job = await statusRes.json();
-      
-      if (job.status === "COMPLETED") {
-        completedData = job;
-        break;
-      }
-      if (job.status === "FAILED") {
-        throw new Error(job.error || "Analysis failed on server.");
-      }
-      
-      // Update progress
-      pct = job.progress || 0;
-      fill.style.width = pct + '%';
-      if (pct < 15) ptext.textContent = steps[0];
-      else if (pct < 30) ptext.textContent = steps[1];
-      else if (pct < 45) ptext.textContent = steps[2];
-      else if (pct < 60) ptext.textContent = steps[3];
-      else if (pct < 75) ptext.textContent = steps[4];
-      else if (pct < 90) ptext.textContent = steps[5];
-      else ptext.textContent = steps[6];
-
-      await new Promise(r => setTimeout(r, 2000));
-    }
-
-    // 3. Generate Insights (Phase 6)
-    ptext.textContent = "Generating intelligence...";
-    const insightsRes = await fetch(`${API}/api/v1/insights`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({export_path: completedData.export_path})
-    });
-    const insightsData = await insightsRes.json();
-
-    clearInterval(pInt);
-    fill.style.width = '100%';
-    ptext.textContent = "Analysis complete.";
-    
-    setTimeout(() => {
-      document.getElementById('page-input').classList.add('hidden');
-      document.getElementById('page-results').classList.remove('hidden');
-      renderAll({
-        analysis_raw: { parsed_json: completedData.result },
-        insights_pipeline: insightsData
-      });
-    }, 500);
-
-  } catch(e) {
-    clearInterval(pInt);
-    btn.disabled = false;
-    document.getElementById('startup-desc').disabled = false;
-    document.getElementById('progress-wrap').classList.add('hidden');
-    alert("Analysis failed: " + e.message);
-  }
-});
-
-document.getElementById('btn-reset').addEventListener('click', () => {
-  document.getElementById('page-results').classList.add('hidden');
-  document.getElementById('page-input').classList.remove('hidden');
-  document.getElementById('progress-fill').style.width = '0%';
-  document.getElementById('progress-wrap').classList.add('hidden');
-  document.getElementById('btn-analyze').disabled = false;
-  document.getElementById('startup-desc').disabled = false;
-  document.getElementById('startup-desc').value = '';
-  destroyCharts();
-});
-
-// Tab switching
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById(tab.dataset.tab).classList.add('active');
-  });
-});
-
-// ─── Chart registry (for cleanup) ───
-const charts = {};
-function destroyCharts() {
-  Object.values(charts).forEach(c => c.destroy());
-  Object.keys(charts).forEach(k => delete charts[k]);
-}
-
-// ─── Render ────────────────────────────────────────────────────────────────
-function renderAll(payload) {
-  // Extract nested structure from the Phase 5 JSON (stored in analysis_raw.parsed_json)
-  const raw = payload.analysis_raw?.parsed_json || payload.parsed_json || {};
-  // insights_pipeline gives us the diff-based insight from insight_engine
-  const pipelineInsights = payload.insights_pipeline?.insights || {};
-  const pipeMeta = payload.insights_pipeline?.meta || {};
-
-  // The rich Phase 5 output has: raw.meta, raw.competitors, raw.market_analysis
-  const meta = raw.meta || {};
-  const competitors = raw.competitors || {};
-  const market = raw.market_analysis || {};
-
-  // Fallback: if Phase 5 returned old flat format, we adapt
-  const compNames = Object.keys(competitors);
-
-  // ── Topbar meta ──
-  document.getElementById('m-industry').textContent = meta.startup_industry || pipeMeta.industry || 'N/A';
-  document.getElementById('m-count').textContent = compNames.length || meta.competitors_count || 'N/A';
-  document.getElementById('m-date').textContent = meta.scraped_at ? new Date(meta.scraped_at).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : new Date().toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'});
-
-  // ── Overview Tab ──
-  renderOverview(market, competitors, pipelineInsights);
-
-  // ── Competitor Deep Dive ──
-  renderCompetitorCards(competitors, payload.insights_pipeline?.diffs || []);
-
-  // ── Charts ──
-  renderCharts(competitors, market);
-
-  // ── Intelligence Tab ──
-  renderIntelligence(market, pipelineInsights);
-}
-
-// ─── Overview ──────────────────────────────────────────────────────────────
-function renderOverview(market, competitors, ai) {
-  const pr = market.pricing_range || {};
-  if (pr.min_usd != null && pr.max_usd != null) {
-    document.getElementById('ov-pricing-range').textContent = `$${pr.min_usd} – $${pr.max_usd}/mo`;
-    document.getElementById('ov-pricing-sub').textContent = `avg $${pr.avg_usd?.toFixed(2) || '?'}/mo across all competitors`;
-  }
-  document.getElementById('ov-pricing-trend').textContent = market.pricing_trend || 'Insufficient Data';
-  document.getElementById('ov-vacuum').textContent = market.pricing_vacuum || 'Insufficient Data';
-
-  // Entry opportunities
-  const ul = document.getElementById('ov-opportunities');
-  ul.innerHTML = (market.entry_opportunities || []).map(o => `<li style="padding:4px 0;border-bottom:1px solid var(--border)">${o}</li>`).join('');
-
-  // Common features
-  const cf = document.getElementById('ov-common');
-  cf.innerHTML = (market.common_features || []).map(f => `<span class="pill pill-feat">${f}</span>`).join('');
-
-  // Overused messaging
-  const msg = document.getElementById('ov-messaging');
-  msg.innerHTML = (market.overused_messaging || []).map(m => `<span class="pill" style="background:rgba(255,107,107,.08);color:var(--warn);border:1px solid rgba(255,107,107,.2)">"${m}"</span>`).join('');
-
-  // Competitor strip
-  const strip = document.getElementById('ov-comp-strip');
-  strip.innerHTML = '';
-  Object.entries(competitors).forEach(([name, comp]) => {
-    const curPrice = comp.current_pricing?.[0]?.price_usd;
-    const histPrice = comp.historical_pricing?.[0]?.price_usd;
-    const delta = comp.pricing_delta_pct;
-    const deltaStr = delta != null ? (delta > 0 ? `+${delta.toFixed(1)}%` : `${delta.toFixed(1)}%`) : null;
-    const deltaColor = delta > 0 ? 'var(--warn)' : delta < 0 ? 'var(--accent2)' : 'var(--muted)';
-
-    const posMap = (market.market_positioning_map || []).find(p => p.name === name) || {};
-
-    strip.innerHTML += `
-      <div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
-        <div style="min-width:180px">
-          <div style="font-weight:700;font-size:0.95rem">${name}</div>
-          <div style="font-size:0.78rem;color:var(--muted);margin-top:2px;font-style:italic">${comp.tagline || ''}</div>
-        </div>
-        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.83rem">
-          <div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">CURRENT</span><strong>${curPrice != null ? '$'+curPrice+'/mo' : 'N/A'}</strong></div>
-          <div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">12MO AGO</span><strong style="color:var(--muted)">${histPrice != null ? '$'+histPrice+'/mo' : 'N/A'}</strong></div>
-          ${deltaStr ? `<div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">CHANGE</span><strong style="color:${deltaColor}">${deltaStr}</strong></div>` : ''}
-          <div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">MODEL</span><span class="badge badge-blue">${comp.pricing_model || 'N/A'}</span></div>
-          <div><span style="color:var(--muted);font-size:0.7rem;display:block;margin-bottom:2px">SEGMENT</span><span class="badge badge-gray">${comp.positioning || 'N/A'}</span></div>
-        </div>
-      </div>`;
-  });
-}
-
-// ─── Competitor Deep Dive Cards ─────────────────────────────────────────────
-function renderCompetitorCards(competitors, diffs) {
-  const container = document.getElementById('competitor-cards');
-  container.innerHTML = '';
-
-  Object.entries(competitors).forEach(([name, comp]) => {
-    const diffEntry = diffs.find(d => d.competitor_name === name) || {};
-
-    const curTiers = comp.current_pricing || [];
-    const histTiers = comp.historical_pricing || [];
-    const delta = comp.pricing_delta_pct;
-    const deltaClass = delta > 0 ? 'price-change-up' : delta < 0 ? 'price-change-down' : '';
-
-    // Build pricing rows
-    let pricingHTML = '';
-    if (curTiers.length) {
-      const rows = curTiers.map((t, i) => {
-        const hist = histTiers[i];
-        const diff = hist?.price_usd != null && t.price_usd != null ? (t.price_usd - hist.price_usd).toFixed(2) : null;
-        const diffStr = diff !== null ? (diff > 0 ? `<span class="price-change-up">+$${diff}</span>` : diff < 0 ? `<span class="price-change-down">$${diff}</span>` : '<span style="color:var(--muted)">—</span>') : '<span style="color:var(--muted)">—</span>';
-        return `<tr>
-          <td style="color:var(--label)">${t.tier}</td>
-          <td style="font-family:monospace">${t.price_usd != null ? '$'+t.price_usd : '—'}</td>
-          <td style="font-family:monospace;color:var(--muted)">${hist?.price_usd != null ? '$'+hist.price_usd : '—'}</td>
-          <td>${diffStr}</td>
-          <td><span class="badge badge-gray" style="font-size:0.65rem">${t.billing || '—'}</span></td>
-        </tr>`;
-      }).join('');
-      pricingHTML = `<div style="margin:16px 0">
-        <div class="card-header">Pricing Tiers — Now vs. 12 Months Ago</div>
-        <div style="overflow-x:auto"><table class="pricing-tbl">
-          <thead><tr><th>Tier</th><th>Current</th><th>Historical</th><th>Delta</th><th>Billing</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>
-        ${delta != null ? `<div style="margin-top:8px;font-size:0.8rem">Overall price change: <strong class="${deltaClass}">${delta > 0 ? '+' : ''}${delta.toFixed(1)}%</strong></div>` : ''}
-      </div>`;
-    }
-
-    // Features
-    const keyFeats = (comp.key_features || []).slice(0, 8);
-    const added = comp.recent_additions || [];
-    const removed = comp.recent_removals || [];
-
-    // Complaints / Praise
-    const complaints = (comp.top_complaints || []).slice(0, 4);
-    const praise = (comp.top_praise || []).slice(0, 3);
-
-    const sent = comp.sentiment_score || 0;
-    const sentLabel = sent > 0.2 ? 'Positive' : sent < -0.2 ? 'Negative' : 'Neutral';
-    const sentColor = sent > 0.2 ? 'var(--accent2)' : sent < -0.2 ? 'var(--warn)' : 'var(--muted)';
-
-    const el = document.createElement('div');
-    el.className = 'card';
-    el.style.marginBottom = '16px';
-    el.innerHTML = `
-      <div class="comp-header">
-        <div>
-          <div class="comp-name">${name}</div>
-          <div class="comp-tagline">${comp.tagline || ''}</div>
-          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-            <span class="badge badge-blue">${comp.pricing_model || 'N/A'}</span>
-            <span class="badge badge-gray">${comp.positioning || 'N/A'}</span>
-            <span class="badge badge-gray">${comp.messaging_tone || 'N/A'} tone</span>
-            <span class="badge badge-gray">${comp.target_segment || ''}</span>
+    <!-- Header / Meta Bar -->
+    <header class="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
+      <div class="max-w-7xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <h2 class="text-xl font-bold text-white tracking-tight">Market<span class="text-brand-400">Lens</span></h2>
+          <div class="h-5 w-px bg-slate-700"></div>
+          <div class="flex items-center space-x-4 text-sm text-slate-400">
+            <div>Industry: <span id="m-industry" class="font-medium text-slate-200">...</span></div>
+            <div>Analyzed: <span id="m-count" class="font-medium text-slate-200">...</span></div>
+            <div>Date: <span id="m-date" class="font-medium text-slate-200">...</span></div>
           </div>
         </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:0.7rem;color:var(--muted);margin-bottom:4px">SENTIMENT</div>
-          <div style="font-size:1.1rem;font-weight:700;color:${sentColor}">${sentLabel}</div>
-          <div style="font-size:0.78rem;color:var(--muted)">${sent.toFixed(2)}</div>
-        </div>
+        <button id="btn-reset"
+          class="text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white px-4 py-2 rounded-md transition-colors border border-slate-700">
+          New Analysis
+        </button>
       </div>
+    </header>
 
-      ${pricingHTML}
+    <main class="max-w-7xl mx-auto px-6 py-8">
 
-      <div class="grid-2" style="margin-bottom:16px">
-        <div>
-          <div class="card-header">Key Features</div>
-          <div class="pill-wrap">${keyFeats.map(f=>`<span class="pill pill-feat">${f}</span>`).join('')}</div>
-        </div>
-        <div>
-          <div class="card-header">Recent Changes</div>
-          <div class="pill-wrap">
-            ${added.map(f=>`<span class="pill pill-add">+ ${f}</span>`).join('')}
-            ${removed.map(f=>`<span class="pill pill-rem">${f}</span>`).join('')}
-            ${!added.length && !removed.length ? '<span style="color:var(--muted);font-size:0.82rem">No changes detected</span>' : ''}
+      <!-- Tab Navigation -->
+      <nav class="flex space-x-8 border-b border-slate-800 mb-8 overflow-x-auto no-scrollbar">
+        <button class="tab-btn active pb-3 text-sm font-medium text-slate-400 hover:text-slate-200"
+          data-target="tab-overview">Market Overview</button>
+        <button class="tab-btn pb-3 text-sm font-medium text-slate-400 hover:text-slate-200"
+          data-target="tab-competitors">Competitor Deep Dive</button>
+        <button class="tab-btn pb-3 text-sm font-medium text-slate-400 hover:text-slate-200"
+          data-target="tab-intelligence">AI Synthesis</button>
+      </nav>
+
+      <!-- TAB: OVERVIEW -->
+      <div id="tab-overview" class="tab-content block animate-[fadeIn_0.3s]">
+
+        <!-- Top Stats Row -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div class="glass-card p-6 border-t-2 border-t-amber-500">
+            <p class="text-sm font-medium text-slate-400 mb-1 tracking-wide uppercase">Pricing Range</p>
+            <div class="text-2xl font-bold text-white" id="ov-pricing-range">--</div>
+            <p class="text-sm text-slate-500 mt-1" id="ov-pricing-sub">Analyzing overall market floor/ceiling</p>
+          </div>
+          <div class="glass-card p-6 border-t-2 border-t-brand-500">
+            <p class="text-sm font-medium text-slate-400 mb-1 tracking-wide uppercase">Market Vacuum</p>
+            <div class="text-lg font-semibold text-white leading-tight" id="ov-vacuum">--</div>
+            <p class="text-sm text-slate-500 mt-1">Underserved segment</p>
+          </div>
+          <div class="glass-card p-6 border-t-2 border-t-emerald-500">
+            <p class="text-sm font-medium text-slate-400 mb-1 tracking-wide uppercase">Historical Trend</p>
+            <div class="text-lg font-semibold text-white leading-tight" id="ov-pricing-trend">--</div>
+            <p class="text-sm text-slate-500 mt-1">Pricing movement over 12mo</p>
           </div>
         </div>
+
+        <!-- Charts Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <div class="glass-card p-6">
+            <h3 class="text-lg font-semibold mb-4 text-white">Feature Positioning Matrix</h3>
+            <div class="h-[300px]"><canvas id="chart-positioning"></canvas></div>
+          </div>
+          <div class="glass-card p-6">
+            <h3 class="text-lg font-semibold mb-4 text-white">Historical Pricing (12mo Delta)</h3>
+            <div class="h-[300px]"><canvas id="chart-pricing"></canvas></div>
+          </div>
+        </div>
+
+        <div class="glass-card p-6 mb-8">
+          <h3 class="text-lg font-semibold mb-4 text-white hover:text-brand-400 transition-colors">Immediate Entry
+            Opportunities</h3>
+          <ul id="ov-opportunities" class="space-y-3 text-slate-300">
+            <!-- Populated by JS -->
+          </ul>
+        </div>
+
+        <!-- Competitor Summary Strip -->
+        <h3 class="text-lg font-semibold mb-4 text-white mt-10">Competitor Baseline</h3>
+        <div id="ov-comp-strip" class="flex flex-col gap-4">
+          <!-- Populated by JS -->
+        </div>
       </div>
 
-      <div class="grid-2">
-        <div>
-          <div class="card-header">Community Complaints</div>
-          ${complaints.length ? complaints.map(c=>`<div class="complaint-item">${c}</div>`).join('') : '<div style="color:var(--muted);font-size:0.82rem">None detected</div>'}
-        </div>
-        <div>
-          <div class="card-header">Community Praise</div>
-          ${praise.length ? praise.map(c=>`<div class="praise-item">${c}</div>`).join('') : '<div style="color:var(--muted);font-size:0.82rem">None detected</div>'}
+      <!-- TAB: COMPETITORS (Deep Dive) -->
+      <div id="tab-competitors" class="tab-content hidden animate-[fadeIn_0.3s]">
+        <div id="competitor-cards" class="flex flex-col gap-10">
+          <!-- Inject modular cards here -->
         </div>
       </div>
 
-      ${comp.trustpilot_data ? `
-      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-        <div class="card-header">Trustpilot Reviews (Live Scrape)</div>
-        <div style="max-height: 200px; overflow-y: auto; padding-right: 10px;">
-          ${(comp.trustpilot_data.reviews || []).map(r => `
-            <div style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-weight: 600; font-size: 0.85rem; color: var(--text);">${r.title || 'Review'}</span>
-                <span style="font-size: 0.75rem; color: var(--accent2);">★ ${r.rating}</span>
-              </div>
-              <div style="font-size: 0.8rem; color: var(--label); line-height: 1.5;">${r.body}</div>
+      <!-- TAB: INTELLIGENCE (Diff & Synthesis Engine) -->
+      <div id="tab-intelligence" class="tab-content hidden animate-[fadeIn_0.3s]">
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div class="glass-card p-6 col-span-1 lg:col-span-2">
+            <h3 class="text-lg font-semibold mb-4 text-brand-400">Opportunity Gaps</h3>
+            <ul id="int-feature-gaps" class="space-y-3 text-slate-300 list-disc list-inside"></ul>
+
+            <h3 class="text-lg font-semibold mt-8 mb-4 text-brand-400">Differentiation Angles</h3>
+            <ul id="int-diff-angles" class="space-y-3 text-slate-300 list-disc list-inside"></ul>
+          </div>
+
+          <div class="glass-card p-6 flex flex-col gap-6">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-2">Momentum Leader</h3>
+              <div id="int-vacuum" class="text-xl font-bold text-white leading-tight">--</div>
             </div>
-          `).join('')}
-          ${(!comp.trustpilot_data.reviews || !comp.trustpilot_data.reviews.length) ? '<div style="color:var(--muted);font-size:0.8rem;">No detailed reviews found on the first 3 pages.</div>' : ''}
+            <div class="h-px w-full bg-slate-800"></div>
+            <div>
+              <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Tired Industry Messaging
+              </h3>
+              <ul id="int-messaging" class="space-y-2 text-sm text-red-400 italic"></ul>
+            </div>
+          </div>
         </div>
-      </div>` : ''}
 
-      ${comp.competitive_moat ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
-        <div class="card-header">Competitive Moat</div>
-        <div class="moat-text">${comp.competitive_moat}</div>
-      </div>` : ''}
-    `;
-    container.appendChild(el);
-  });
-}
+        <div class="glass-card p-8 bg-gradient-to-br from-slate-900/60 to-slate-800/20">
+          <div class="flex items-center gap-3 mb-6">
+            <svg class="w-6 h-6 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z">
+              </path>
+            </svg>
+            <h3 class="text-xl font-bold text-white">Executive Strategy Synthesis</h3>
+          </div>
+          <div id="int-full-analysis"
+            class="prose prose-invert prose-slate max-w-none text-slate-300 leading-relaxed space-y-4">
+            <!-- Text -->
+          </div>
+        </div>
 
-// ─── Charts ─────────────────────────────────────────────────────────────────
-const CHART_COLORS = ['#3b7bff','#00d4aa','#ff9f43','#ff6b6b','#a29bfe','#fd79a8'];
-Chart.defaults.color = '#64748b';
-Chart.defaults.borderColor = '#1e2d42';
-Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+      </div>
 
-function renderCharts(competitors, market) {
-  const names = Object.keys(competitors);
+    </main>
+  </div>
 
-  // ── Pricing Chart (grouped bar: current vs historical) ──
-  const curPrices  = names.map(n => competitors[n].current_pricing?.[0]?.price_usd ?? null);
-  const histPrices = names.map(n => competitors[n].historical_pricing?.[0]?.price_usd ?? null);
+  <script>
+    // Setup API Endpoint
+    const API = "http://localhost:8000";
 
-  const ctxP = document.getElementById('chart-pricing').getContext('2d');
-  if (charts.pricing) charts.pricing.destroy();
-  charts.pricing = new Chart(ctxP, {
-    type: 'bar',
-    data: {
-      labels: names,
-      datasets: [
-        { label: 'Current (base tier)', data: curPrices, backgroundColor: 'rgba(59,123,255,0.75)', borderRadius: 6, borderSkipped: false },
-        { label: '12 months ago', data: histPrices, backgroundColor: 'rgba(100,116,139,0.35)', borderColor: 'rgba(100,116,139,0.6)', borderWidth: 1, borderRadius: 6, borderSkipped: false }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `$${ctx.parsed.y}/mo` } } },
-      scales: { y: { ticks: { callback: v => `$${v}` }, grid: { color: '#1e2d42' } }, x: { grid: { display: false } } }
-    }
-  });
+    // Tab Logic
+    const tabs = document.querySelectorAll('.tab-btn');
+    const contents = document.querySelectorAll('.tab-content');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active', 'text-brand-400', 'border-brand-400'));
+        tabs.forEach(t => t.classList.add('text-slate-400', 'border-transparent'));
+        contents.forEach(c => c.classList.add('hidden'));
 
-  // ── Sentiment Chart ──
-  const sentScores = names.map(n => competitors[n].sentiment_score ?? 0);
-  const ctxS = document.getElementById('chart-sentiment').getContext('2d');
-  if (charts.sentiment) charts.sentiment.destroy();
-  charts.sentiment = new Chart(ctxS, {
-    type: 'bar',
-    data: {
-      labels: names,
-      datasets: [{
-        label: 'Sentiment Score',
-        data: sentScores,
-        backgroundColor: sentScores.map(s => s > 0.1 ? 'rgba(0,212,170,0.7)' : s < -0.1 ? 'rgba(255,107,107,0.7)' : 'rgba(100,116,139,0.5)'),
-        borderRadius: 6
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.parsed.x.toFixed(2)} (–1 negative, +1 positive)` } } },
-      scales: { x: { min: -1, max: 1, ticks: { stepSize: 0.25 }, grid: { color: '#1e2d42' } }, y: { grid: { display: false } } }
-    }
-  });
+        tab.classList.remove('text-slate-400', 'border-transparent');
+        tab.classList.add('active', 'text-brand-400', 'border-brand-400');
+        document.getElementById(tab.dataset.target).classList.remove('hidden');
+      });
+    });
 
-  // ── Market Positioning Scatter ──
-  const posMap = market.market_positioning_map || [];
-  const ctxPo = document.getElementById('chart-positioning').getContext('2d');
-  if (charts.positioning) charts.positioning.destroy();
-  charts.positioning = new Chart(ctxPo, {
-    type: 'scatter',
-    data: {
-      datasets: posMap.map((p, i) => ({
-        label: p.name,
-        data: [{ x: p.price_score ?? 5, y: p.feature_richness ?? 5 }],
-        backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
-        pointRadius: 10,
-        pointHoverRadius: 14
-      }))
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } },
-        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label} — Price: ${ctx.parsed.x}/10, Features: ${ctx.parsed.y}/10` } }
-      },
-      scales: {
-        x: { min: 0, max: 10, title: { display: true, text: 'Pricing Score (1=cheapest, 10=most expensive)' }, grid: { color: '#1e2d42' } },
-        y: { min: 0, max: 10, title: { display: true, text: 'Feature Richness (1=minimal, 10=full-featured)' }, grid: { color: '#1e2d42' } }
+    // Flow Logic
+    let pInt = null;
+    const btn = document.getElementById('btn-analyze');
+
+    btn.addEventListener('click', async () => {
+      const prompt = document.getElementById('startup-desc').value.trim();
+      if (!prompt) return alert("Please enter a startup description.");
+
+      btn.disabled = true;
+      document.getElementById('startup-desc').disabled = true;
+      const wrap = document.getElementById('progress-wrap');
+      const ptext = document.getElementById('progress-text');
+      const fill = document.getElementById('progress-fill');
+      const ppct = document.getElementById('progress-pct');
+      wrap.classList.remove('hidden');
+
+      try {
+        ptext.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-brand-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Initializing...';
+        const initRes = await fetch(`${API}/api/v1/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_prompt: prompt })
+        });
+        if (!initRes.ok) throw new Error(`HTTP Error: ${initRes.status}`);
+        const job = await initRes.json();
+
+        let completedData = null;
+        pInt = setInterval(async () => {
+          const statRes = await fetch(`${API}/api/v1/status/${job.job_id}`);
+          const statBody = await statRes.json();
+
+          const prog = statBody.progress || 0;
+          fill.style.width = `${prog}%`;
+          ppct.textContent = `${prog}%`;
+
+          if (statBody.status === "FAILED") {
+            clearInterval(pInt);
+            throw new Error(statBody.error);
+          }
+
+          if (prog < 20) ptext.innerHTML = 'Discovering real competitors...';
+          else if (prog < 40) ptext.innerHTML = 'Scraping live features and pricing...';
+          else if (prog < 60) ptext.innerHTML = 'Retrieving 12-month Wayback history...';
+          else if (prog < 80) ptext.innerHTML = 'Analyzing Reddit & Trustpilot sentiment...';
+          else if (prog < 95) ptext.innerHTML = 'Running LLM normalization & diff synthesis...';
+
+          if (statBody.status === "COMPLETED") {
+            clearInterval(pInt);
+            completedData = statBody;
+            finishPipeline(completedData);
+          }
+        }, 3000);
+
+      } catch (e) {
+        clearInterval(pInt);
+        resetState(e.message);
+      }
+    });
+
+    async function finishPipeline(data) {
+      const ptext = document.getElementById('progress-text');
+      ptext.innerHTML = 'Generating deep insights...';
+
+      try {
+        const insightsRes = await fetch(`${API}/api/v1/insights`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ export_path: data.export_path })
+        });
+        const insightsData = await insightsRes.json();
+
+        document.getElementById('progress-fill').style.width = '100%';
+        document.getElementById('progress-pct').textContent = '100%';
+        ptext.innerHTML = 'Complete! Rendering dashboard...';
+
+        setTimeout(() => {
+          document.getElementById('page-input').classList.add('hidden');
+          document.getElementById('page-results').classList.remove('hidden');
+          renderDashboard({
+            analysis_raw: { parsed_json: data.result },
+            insights_pipeline: insightsData
+          });
+        }, 600);
+      } catch (e) {
+        resetState("Insights failed: " + e.message);
       }
     }
-  });
-}
 
-// ─── Intelligence Tab ────────────────────────────────────────────────────────
-function renderIntelligence(market, ai) {
-  document.getElementById('int-vacuum').textContent = market.pricing_vacuum || ai.momentum_leader || '—';
+    function resetState(errorMsg = null) {
+      if (errorMsg) alert(errorMsg);
+      btn.disabled = false;
+      document.getElementById('startup-desc').disabled = false;
+      document.getElementById('progress-wrap').classList.add('hidden');
+      document.getElementById('progress-fill').style.width = '0%';
+      document.getElementById('progress-pct').textContent = '0%';
+    }
 
-  document.getElementById('int-feature-gaps').innerHTML =
-    (market.feature_gaps || ai.opportunity_gaps || []).map(f => `<li>${f}</li>`).join('');
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      document.getElementById('page-results').classList.add('hidden');
+      document.getElementById('page-input').classList.remove('hidden');
+      resetState();
+      document.getElementById('startup-desc').value = '';
+      destroyCharts();
+    });
 
-  document.getElementById('int-diff-angles').innerHTML =
-    (market.differentiation_angles || []).map(a => `<li>${a}</li>`).join('');
+    // ─── Rendering Engine ───
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = 'rgba(255,255,255,0.05)';
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    const charts = {};
 
-  document.getElementById('int-messaging').innerHTML =
-    (market.overused_messaging || ai.pricing_patterns || []).map(m => `<li>"${m}"</li>`).join('');
+    function destroyCharts() {
+      Object.values(charts).forEach(c => c.destroy());
+      for (let k in charts) delete charts[k];
+    }
 
-  const analysis = ai.full_analysis || '';
-  document.getElementById('int-full-analysis').innerHTML =
-    analysis ? analysis.split(/\n+/).filter(p => p.trim()).map(p => `<p>${p}</p>`).join('') : '<p>No deep-dive analysis available.</p>';
-}
-</script>
+    function renderDashboard(payload) {
+      const raw = payload.analysis_raw?.parsed_json || {};
+      const pipelineInsights = payload.insights_pipeline?.insights || {};
+      const diffs = payload.insights_pipeline?.diffs || [];
+
+      const meta = raw.meta || {};
+      const competitors = raw.competitors || {};
+      const market = raw.market_analysis || {};
+
+      // Header Meta
+      document.getElementById('m-industry').textContent = meta.startup_industry || 'Software';
+      document.getElementById('m-count').textContent = Object.keys(competitors).length || '0';
+      document.getElementById('m-date').textContent = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+
+      // Market Overview
+      const pr = market.pricing_range || {};
+      document.getElementById('ov-pricing-range').textContent = (pr.min_usd != null && pr.max_usd != null) ? `$${pr.min_usd} - $${pr.max_usd}/mo` : 'Insufficient Data';
+      document.getElementById('ov-pricing-sub').textContent = pr.avg_usd ? `Market Average: $${pr.avg_usd.toFixed(2)}/mo` : '';
+      document.getElementById('ov-vacuum').textContent = market.pricing_vacuum || 'None clearly identifiable';
+      document.getElementById('ov-pricing-trend').textContent = market.pricing_trend || 'Flat/Stable';
+
+      document.getElementById('ov-opportunities').innerHTML = (market.entry_opportunities || [])
+        .map(o => `<li class="flex items-start"><span class="text-brand-500 mr-2 mt-1">✦</span><span>${o}</span></li>`).join('');
+
+      renderCompetitorStrip(competitors, market);
+      renderDeepDiveCards(competitors, diffs);
+      renderCharts(competitors, market);
+      renderIntelligenceTab(market, pipelineInsights);
+    }
+
+    function renderCompetitorStrip(competitors, market) {
+      const strip = document.getElementById('ov-comp-strip');
+      strip.innerHTML = '';
+
+      Object.entries(competitors).forEach(([name, comp]) => {
+        const curPrice = comp.current_pricing?.[0]?.price_usd;
+        const histPrice = comp.historical_pricing?.[0]?.price_usd;
+        const dPct = comp.pricing_delta_pct;
+        const dColor = dPct > 0 ? 'text-red-400' : dPct < 0 ? 'text-emerald-400' : 'text-slate-400';
+        const dStr = dPct != null ? (dPct > 0 ? `+${dPct.toFixed(1)}%` : `${dPct.toFixed(1)}%`) : '--';
+
+        strip.innerHTML += `
+        <div class="glass-card p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 border-l-brand-600 transition-transform hover:-translate-y-1">
+          <div class="md:w-1/3">
+            <h4 class="text-white font-bold text-lg">${name}</h4>
+            <p class="text-sm text-slate-400 mt-1 line-clamp-1">${comp.tagline || 'Unknown Tagline'}</p>
+          </div>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm flex-1">
+            <div><span class="block text-slate-500 text-xs font-semibold mb-1 uppercase tracking-wider">Current Base</span><span class="font-mono text-slate-200">${curPrice != null ? '$' + curPrice + '/mo' : 'N/A'}</span></div>
+            <div><span class="block text-slate-500 text-xs font-semibold mb-1 uppercase tracking-wider">Historical</span><span class="font-mono text-slate-400">${histPrice != null ? '$' + histPrice + '/mo' : 'N/A'}</span></div>
+            <div><span class="block text-slate-500 text-xs font-semibold mb-1 uppercase tracking-wider">Δ Change</span><span class="font-mono font-medium ${dColor}">${dStr}</span></div>
+            <div><span class="block text-slate-500 text-xs font-semibold mb-1 uppercase tracking-wider">Model</span><span class="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-xs">${comp.pricing_model || 'N/A'}</span></div>
+          </div>
+        </div>
+      `;
+      });
+    }
+
+    function renderDeepDiveCards(competitors, diffs) {
+      const wrap = document.getElementById('competitor-cards');
+      wrap.innerHTML = '';
+
+      Object.entries(competitors).forEach(([name, comp]) => {
+        const sScore = comp.sentiment_score ?? 0;
+        const sColor = sScore > 0.1 ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' : sScore < -0.1 ? 'text-red-400 bg-red-400/10 border-red-400/20' : 'text-slate-300 bg-slate-800 border-slate-700';
+        const sWord = sScore > 0.1 ? 'Positive' : sScore < -0.1 ? 'Negative' : 'Neutral';
+
+        const tiers = comp.current_pricing || [];
+        const hTiers = comp.historical_pricing || [];
+        const tblRows = tiers.map((t, idx) => {
+          const hist = hTiers[idx];
+          const pCur = t.price_usd != null ? t.price_usd : null;
+          const pHist = hist?.price_usd != null ? hist.price_usd : null;
+          let delta = '--';
+          let dc = 'text-slate-500';
+          if (pCur !== null && pHist !== null) {
+            const d = pCur - pHist;
+            delta = d > 0 ? `+$${d.toFixed(2)}` : d < 0 ? `-$${Math.abs(d).toFixed(2)}` : 'No change';
+            dc = d > 0 ? 'text-red-400' : d < 0 ? 'text-emerald-400' : 'text-slate-500';
+          }
+
+          return `
+          <tr class="border-b border-slate-800/50 hover:bg-slate-800/30">
+            <td class="py-3 px-4 font-medium">${t.tier} <span class="text-xs text-slate-500 block">${t.billing || ''}</span></td>
+            <td class="py-3 px-4 font-mono text-white">${pCur != null ? '$' + pCur : '--'}</td>
+            <td class="py-3 px-4 font-mono text-slate-500">${pHist != null ? '$' + pHist : '--'}</td>
+            <td class="py-3 px-4 font-mono font-medium ${dc}">${delta}</td>
+          </tr>
+        `;
+        }).join('');
+
+        // Reviews
+        const tp = comp.trustpilot_data || {};
+        const revs = tp.reviews || [];
+        const reviewHTML = revs.length > 0 ? revs.slice(0, 3).map(r => `
+        <div class="bg-slate-900/50 border border-slate-800 rounded p-4">
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold text-sm text-slate-300">${r.title}</span>
+            <span class="text-xs font-bold ${r.rating >= 4 ? 'text-emerald-400' : r.rating <= 2 ? 'text-red-400' : 'text-amber-400'}">★ ${r.rating}/5</span>
+          </div>
+          <p class="text-xs text-slate-400 line-clamp-3">${r.body}</p>
+        </div>
+      `).join('') : '<p class="text-sm text-slate-500 italic">No Trustpilot reviews scraped.</p>';
+
+        const features = (comp.key_features || []).map(f => `<span class="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-md text-xs border border-slate-700">${f}</span>`).join('');
+        const adds = (comp.recent_additions || []).map(f => `<span class="bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 px-2.5 py-1 rounded-md text-xs">+ ${f}</span>`).join('');
+        const rems = (comp.recent_removals || []).map(f => `<span class="bg-red-900/30 text-red-400 border border-red-800/50 px-2.5 py-1 rounded-md text-xs">- ${f}</span>`).join('');
+
+        wrap.innerHTML += `
+        <div class="glass-card shadow-xl shadow-black/50 overflow-hidden">
+          <div class="p-8 border-b border-slate-800 pt-10 relative">
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${sScore > 0 ? 'from-emerald-600' : sScore < 0 ? 'from-red-600' : 'from-slate-600'} to-transparent"></div>
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div>
+                <h3 class="text-3xl font-bold text-white mb-2">${name}</h3>
+                <p class="text-slate-400 max-w-2xl">${comp.tagline || ''}</p>
+                <div class="flex flex-wrap gap-2 mt-4">
+                  <span class="bg-brand-500/10 text-brand-400 border border-brand-500/20 px-2 py-1 rounded text-xs font-medium uppercase tracking-wide">${comp.positioning || 'Unknown Segment'}</span>
+                  <span class="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-1 rounded text-xs font-medium uppercase tracking-wide text-center">${comp.messaging_tone || 'Professional'} Tone</span>
+                </div>
+              </div>
+              <div class="flex-shrink-0 bg-slate-900/50 rounded-xl p-4 border border-slate-800 w-48 text-center">
+                <p class="text-xs text-slate-500 uppercase font-semibold mb-1">Community Sentiment</p>
+                <div class="text-2xl font-bold ${sColor} inline-block px-3 py-1 rounded-lg border">${sWord}</div>
+                <p class="text-xs text-slate-400 mt-2">Score: ${sScore.toFixed(2)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-2">
+            <!-- Left Col: Pricing & Features -->
+            <div class="p-8 border-r border-slate-800 border-b xl:border-b-0 space-y-8">
+              
+              <div>
+                <h4 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Pricing Matrix</h4>
+                <div class="bg-slate-900/50 rounded-xl border border-slate-800 overflow-x-auto">
+                  <table class="w-full text-sm text-left">
+                    <thead class="bg-slate-800/80 text-xs text-slate-400 uppercase font-semibold">
+                      <tr><th class="py-3 px-4">Tier Model</th><th class="py-3 px-4">Live ($)</th><th class="py-3 px-4">Historical ($)</th><th class="py-3 px-4">Delta</th></tr>
+                    </thead>
+                    <tbody>${tblRows || '<tr><td colspan="4" class="p-4 text-center text-slate-500">No pricing data extracted</td></tr>'}</tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <h4 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Feature Vector</h4>
+                <div class="flex flex-wrap gap-2">${features}</div>
+                <div class="flex flex-wrap gap-2 mt-4">${adds}${rems}</div>
+              </div>
+
+            </div>
+
+            <!-- Right Col: Sentiment & Praise -->
+            <div class="p-8 space-y-8 bg-slate-900/10">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                 <div>
+                   <h4 class="text-sm font-semibold text-red-400 uppercase tracking-wider mb-4 flex items-center gap-2">Core Complaints</h4>
+                   <ul class="space-y-3">${(comp.top_complaints || []).map(c => `<li class="text-sm text-slate-300 flex items-start"><span class="text-red-500 mr-2 mt-0.5 max-w-full">↘</span><span>${c}</span></li>`).join('') || '<span class="text-xs text-slate-500">No major complaints found.</span>'}</ul>
+                 </div>
+                 <div>
+                   <h4 class="text-sm font-semibold text-emerald-400 uppercase tracking-wider mb-4 flex items-center gap-2">Core Praise</h4>
+                   <ul class="space-y-3">${(comp.top_praise || []).map(c => `<li class="text-sm text-slate-300 flex items-start"><span class="text-emerald-500 mr-2 mt-0.5">↗</span><span>${c}</span></li>`).join('') || '<span class="text-xs text-slate-500">No major praise found.</span>'}</ul>
+                 </div>
+              </div>
+              
+              <div class="pt-6 border-t border-slate-800/50">
+                 <h4 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Live Trustpilot Reviews</h4>
+                 <div class="grid grid-cols-1 gap-4">${reviewHTML}</div>
+              </div>
+              
+            </div>
+          </div>
+        </div>
+      `;
+      });
+    }
+
+    function renderCharts(competitors, market) {
+      const names = Object.keys(competitors);
+      const posMap = market.market_positioning_map || [];
+      const curPrices = names.map(n => competitors[n].current_pricing?.[0]?.price_usd ?? 0);
+      const histPrices = names.map(n => competitors[n].historical_pricing?.[0]?.price_usd ?? 0);
+
+      const ctxPo = document.getElementById('chart-positioning').getContext('2d');
+      charts.pos = new Chart(ctxPo, {
+        type: 'scatter',
+        data: {
+          datasets: posMap.map((p, i) => ({
+            label: p.name,
+            data: [{ x: p.price_score ?? 5, y: p.feature_richness ?? 5 }],
+            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'][i % 5],
+            pointRadius: 10,
+            pointHoverRadius: 14,
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 2
+          }))
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#cbd5e1', font: { family: 'Inter' } } },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.9)', titleColor: '#fff', bodyColor: '#cbd5e1', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1,
+              callbacks: { label: ctx => `${ctx.dataset.label} | Price: ${ctx.parsed.x}/10, Feat: ${ctx.parsed.y}/10` }
+            }
+          },
+          scales: {
+            x: { min: 0, max: 10, title: { display: true, text: 'Affordability & Pricing', color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { min: 0, max: 10, title: { display: true, text: 'Feature Richness', color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          }
+        }
+      });
+
+      const ctxPr = document.getElementById('chart-pricing').getContext('2d');
+      charts.price = new Chart(ctxPr, {
+        type: 'bar',
+        data: {
+          labels: names,
+          datasets: [
+            { label: 'Current Base ($)', data: curPrices, backgroundColor: '#3b82f6', borderRadius: 6 },
+            { label: 'Historical ($)', data: histPrices, backgroundColor: '#475569', borderRadius: 6 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top', labels: { color: '#cbd5e1' } } },
+          scales: {
+            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+            x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+          }
+        }
+      });
+    }
+
+    function renderIntelligenceTab(market, ai) {
+      document.getElementById('int-feature-gaps').innerHTML = (market.feature_gaps || ai.opportunity_gaps || []).map(f => `<li>${f}</li>`).join('');
+      document.getElementById('int-diff-angles').innerHTML = (market.differentiation_angles || []).map(a => `<li>${a}</li>`).join('');
+      document.getElementById('int-vacuum').textContent = market.pricing_vacuum || ai.momentum_leader || 'None detected';
+      document.getElementById('int-messaging').innerHTML = (market.overused_messaging || ai.pricing_patterns || []).map(m => `<li>"${m}"</li>`).join('');
+
+      const analysis = ai.full_analysis || '';
+      document.getElementById('int-full-analysis').innerHTML = analysis ? `<p>${analysis.replace(/\n\n/g, '</p><p>')}</p>` : 'Synthesizing data not available.';
+    }
+  </script>
 </body>
+
 </html>
